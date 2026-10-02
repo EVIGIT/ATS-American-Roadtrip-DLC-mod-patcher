@@ -7,9 +7,11 @@ Current App Version: v1.3.3
 ### Added
 
 ### Fixed
+- "Install latest GitHub release" no longer fails with a "release not found" error. The latest tag is now read from the GitHub REST API because `gh release view latest` reports the wrong result on some setups, even when a published release exists.
 - The in-app Changelog now reads the newest published release instead of the repository's default branch, so it no longer hides the latest entry when a release is tagged from another branch.
 
 ### Changed
+- The window, taskbar and header logo artwork is now tinted to the active theme, so the branding follows the selected palette.
 
 ## v1.3.3
 

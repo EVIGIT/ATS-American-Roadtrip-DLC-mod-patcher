@@ -1323,6 +1323,104 @@ internal sealed class Badge : Control
 }
 
 /// <summary>
+/// Builds the app logo and window icon tinted to the active palette so the header,
+/// title bar and taskbar follow the selected theme. Results are cached per accent so
+/// the GDI handles stay alive for the lifetime of the process.
+/// </summary>
+internal static class ThemedIcon
+{
+    private static readonly Dictionary<string, Icon> IconCache = new();
+    private static readonly Dictionary<string, Bitmap> LogoCache = new();
+
+    public static Icon? WindowIcon() => BuildIcon(Theme.Accent);
+
+    public static Bitmap? Logo() => BuildLogo(Theme.Accent);
+
+    private static string Key(Color accent) => accent.ToArgb().ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static Icon? BuildIcon(Color accent)
+    {
+        var key = Key(accent);
+        if (IconCache.TryGetValue(key, out var cached))
+            return cached;
+
+        try
+        {
+            using var stream = ConverterForm.LoadResource("app.ico");
+            if (stream == null)
+                return null;
+            using var original = new Icon(stream);
+            using var source = original.ToBitmap();
+            var icon = Icon.FromHandle(Tint(source, accent).GetHicon());
+            IconCache[key] = icon;
+            return icon;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static Bitmap? BuildLogo(Color accent)
+    {
+        var key = Key(accent);
+        if (LogoCache.TryGetValue(key, out var cached))
+            return cached;
+
+        try
+        {
+            using var stream = ConverterForm.LoadResource("logo.png");
+            if (stream == null)
+                return null;
+            using var image = Image.FromStream(stream);
+            var tinted = Tint(image, accent);
+            LogoCache[key] = tinted;
+            return tinted;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Recolours the artwork to the accent while keeping the original luminance, so the
+    /// shape and shading of the logo survive the theme change.
+    /// </summary>
+    private static Bitmap Tint(Image source, Color accent)
+    {
+        var bitmap = new Bitmap(source.Width, source.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        using (var graphics = Graphics.FromImage(bitmap))
+        {
+            graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            graphics.DrawImage(source, new Rectangle(0, 0, bitmap.Width, bitmap.Height));
+        }
+
+        for (var y = 0; y < bitmap.Height; y++)
+        {
+            for (var x = 0; x < bitmap.Width; x++)
+            {
+                var pixel = bitmap.GetPixel(x, y);
+                if (pixel.A == 0)
+                    continue;
+
+                var luminance = (0.2126 * pixel.R + 0.7152 * pixel.G + 0.0722 * pixel.B) / 255.0;
+                var shade = 0.35 + 0.85 * luminance;
+                bitmap.SetPixel(x, y, Color.FromArgb(
+                    pixel.A,
+                    Clamp(accent.R * shade),
+                    Clamp(accent.G * shade),
+                    Clamp(accent.B * shade)));
+            }
+        }
+
+        return bitmap;
+    }
+
+    private static int Clamp(double value) => (int)Math.Clamp(value, 0, 255);
+}
+
+/// <summary>
 /// Startup sign-in window. It never blocks the app: skipping simply leaves the
 /// supporter themes locked, and the window can be reopened from Settings.
 /// </summary>
@@ -1352,12 +1450,8 @@ internal sealed class SignInForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         DoubleBuffered = true;
         KeyPreview = true;
-        using (var icon = ConverterForm.LoadResource("app.ico"))
-        {
-            if (icon != null)
-                Icon = new Icon(icon);
-        }
-
+        if (ThemedIcon.WindowIcon() is { } themedIcon)
+            Icon = themedIcon;
         BuildUi();
         if (AuthSession.IsSignedIn)
             ShowSignedInState();
@@ -1774,6 +1868,8 @@ public sealed class ConverterForm : Form
         Checked = true
     };
 
+    private PictureBox? _logoBox;
+
     private readonly ToggleSwitch _translateDealer = new()
     {
         Text = "Create Road Trip car dealer",
@@ -1831,11 +1927,8 @@ public sealed class ConverterForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         DoubleBuffered = true;
         AllowDrop = true;
-        using (var icon = LoadResource("app.ico"))
-        {
-            if (icon != null)
-                Icon = new Icon(icon);
-        }
+        if (ThemedIcon.WindowIcon() is { } themedIcon)
+            Icon = themedIcon;
 
         var y = BuildHeader();
         y = BuildFilesCard(y);
@@ -1875,6 +1968,15 @@ public sealed class ConverterForm : Form
         ApplyDarkTitleBar(this);
     }
 
+    /// <summary>Re-tints the window and header artwork after the palette changes.</summary>
+    private void ApplyThemedBranding()
+    {
+        if (ThemedIcon.WindowIcon() is { } icon)
+            Icon = icon;
+        if (_logoBox != null && ThemedIcon.Logo() is { } logo)
+            _logoBox.Image = logo;
+    }
+
     internal static void ApplyDarkTitleBar(IWin32Window window)
     {
         try
@@ -1905,17 +2007,15 @@ public sealed class ConverterForm : Form
 
     private int BuildHeader()
     {
-        var logo = LoadResource("logo.png");
-        if (logo != null)
+        _logoBox = new PictureBox
         {
-            Controls.Add(new PictureBox
-            {
-                Image = Image.FromStream(logo),
-                SizeMode = PictureBoxSizeMode.Zoom,
-                Location = new Point(Margin_, 22),
-                Size = new Size(58, 58)
-            });
-        }
+            SizeMode = PictureBoxSizeMode.Zoom,
+            Location = new Point(Margin_, 22),
+            Size = new Size(58, 58)
+        };
+        if (ThemedIcon.Logo() is { } logo)
+            _logoBox.Image = logo;
+        Controls.Add(_logoBox);
 
         Controls.Add(new Label
         {
@@ -2771,6 +2871,7 @@ public sealed class ConverterForm : Form
             ApplySettingsAppearance(this, 1f, previousAccent);
             ApplySettingsAppearance(settingsPage, 1f, previousAccent);
             TryEnableDarkTitleBar();
+            ApplyThemedBranding();
             UpdateContent(selectedCategory);
         }
 
@@ -2911,6 +3012,7 @@ public sealed class ConverterForm : Form
                             ApplySettingsAppearance(this, 1f, previousAccent);
                             ApplySettingsAppearance(settingsPage, 1f, previousAccent);
                             TryEnableDarkTitleBar();
+                            ApplyThemedBranding();
                         };
                         themeSwatchRow.Controls.Add(swatch);
                     }

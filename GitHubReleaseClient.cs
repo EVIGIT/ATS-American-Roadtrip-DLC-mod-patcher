@@ -34,20 +34,22 @@ internal static class GitHubReleaseClient
         }
     }
 
+    private static string ResolveLatestReleaseTag()
+    {
+        // `gh release view latest` reports "release not found" on some setups even when a
+        // published latest release exists, so read the tag straight from the REST API.
+        return RunGh(TimeSpan.FromSeconds(20),
+            "api",
+            $"repos/{Repository}/releases/latest",
+            "--jq",
+            ".tag_name").Trim();
+    }
+
     private static string? TryGetLatestReleaseTag()
     {
         try
         {
-            var tag = RunGh(TimeSpan.FromSeconds(20),
-                "release",
-                "view",
-                "latest",
-                "--repo",
-                Repository,
-                "--json",
-                "tagName",
-                "--jq",
-                ".tagName").Trim();
+            var tag = ResolveLatestReleaseTag();
             return string.IsNullOrWhiteSpace(tag) ? null : tag;
         }
         catch
@@ -60,8 +62,7 @@ internal static class GitHubReleaseClient
     {
         RunGh(TimeSpan.FromSeconds(20), "auth", "status", "--hostname", "github.com");
 
-        var latestTag = RunGh(TimeSpan.FromSeconds(20),
-            "release", "view", "latest", "--repo", Repository, "--json", "tagName", "--jq", ".tagName").Trim();
+        var latestTag = ResolveLatestReleaseTag();
 
         if (!TryParseVersion(latestTag, out var latestVersion)
             || !TryParseVersion(currentVersion, out var installedVersion))
