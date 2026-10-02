@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C#: ATSRoadTripConverter",
+      "type": "dotnet",
+      "request": "launch",
+      "projectPath": "${workspaceFolder}/ATSRoadTripConverter.csproj"
+    },
+    {
+      "name": "C#: ATSRoadTripConverter (legacy debugger)",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/bin/Debug/net8.0-windows/ATSRoadTripConverter.exe",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "Build ATSRoadTripConverter",
+      "stopAtEntry": false
+    }
+  ]
+}

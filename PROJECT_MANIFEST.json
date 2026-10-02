@@ -1,0 +1,22 @@
+{
+  "project": "ATSRoadTripConverter",
+  "version": "12.0",
+  "files": [
+    ".gitignore",
+    ".vscode/extensions.json",
+    ".vscode/launch.json",
+    ".vscode/settings.json",
+    ".vscode/tasks.json",
+    "ATSRoadTripConverter.code-workspace",
+    "ATSRoadTripConverter.csproj",
+    "ATSRoadTripConverter.sln",
+    "Build-Project.bat",
+    "ModConverter.cs",
+    "Program.cs",
+    "Properties/launchSettings.json",
+    "README.md",
+    "Run-Converter.bat",
+    "ScsArchive.cs"
+  ],
+  "base": "ATS-RoadTrip-Converter-v2(1).zip supplied by user"
+}

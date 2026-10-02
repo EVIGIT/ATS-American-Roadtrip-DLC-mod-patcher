@@ -1,0 +1,65 @@
+name: Build and publish Windows release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Verify app version and extract release notes
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $program = Get-Content "Program.cs" -Raw
+          if ($program -notmatch ('AppVersion\s*=\s*"' + [regex]::Escape($tag) + '"')) {
+            throw "Program.AppVersion must match release tag $tag."
+          }
+
+          $lines = Get-Content "CHANGELOG.md"
+          $start = -1
+          for ($index = 0; $index -lt $lines.Length; $index++) {
+            if ($lines[$index] -eq "## $tag") {
+              $start = $index
+              break
+            }
+          }
+          if ($start -lt 0) {
+            throw "CHANGELOG.md must contain a section named '## $tag'."
+          }
+
+          $end = $lines.Length
+          for ($index = $start + 1; $index -lt $lines.Length; $index++) {
+            if ($lines[$index] -match '^## ') {
+              $end = $index
+              break
+            }
+          }
+
+          $notes = $lines[$start..($end - 1)] -join "`n"
+          Set-Content -Path "release-notes.md" -Value $notes -Encoding utf8
+
+      - name: Publish Windows app
+        run: dotnet publish ATSRoadTripConverter.csproj --configuration Release --runtime win-x64 --self-contained false --output publish
+
+      - name: Package update asset
+        shell: pwsh
+        run: Compress-Archive -Path "publish\*" -DestinationPath "ATS-American-Roadtrip-Car-Patcher-win-x64.zip" -Force
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${{ github.ref_name }}" "ATS-American-Roadtrip-Car-Patcher-win-x64.zip" --repo "${{ github.repository }}" --title "${{ github.ref_name }}" --notes-file "release-notes.md"
