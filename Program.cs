@@ -617,7 +617,7 @@ internal static class GitHubDeviceSignIn
 internal static class Program
 {
     public const string AppName = "ATS American Roadtrip Car Patcher";
-    public const string AppVersion = "v1.3.2";
+    public const string AppVersion = "v1.3.3";
 
     [STAThread]
     static void Main()
@@ -662,15 +662,17 @@ internal static class Theme
 {
     public static IReadOnlyList<ThemePalette> Palettes { get; } = Array.AsReadOnly(new[]
     {
+        // Order matters: the swatch grid lists the free palettes first, then the GitHub
+        // tier, then the Ko-fi tier, so each group sits side by side.
         new ThemePalette("Roadtrip", Color.FromArgb(13, 16, 21), Color.FromArgb(20, 25, 34), Color.FromArgb(27, 33, 44), Color.FromArgb(38, 46, 60), Color.FromArgb(233, 237, 244), Color.FromArgb(139, 149, 167), Color.FromArgb(255, 138, 61)),
-        new ThemePalette("Midnight", Color.FromArgb(10, 16, 26), Color.FromArgb(16, 24, 37), Color.FromArgb(23, 33, 50), Color.FromArgb(33, 46, 69), Color.FromArgb(230, 238, 247), Color.FromArgb(134, 151, 174), Color.FromArgb(76, 194, 255), ThemeAccess.KoFi),
-        new ThemePalette("Evergreen", Color.FromArgb(10, 18, 15), Color.FromArgb(16, 26, 22), Color.FromArgb(23, 36, 30), Color.FromArgb(33, 50, 42), Color.FromArgb(228, 240, 233), Color.FromArgb(134, 160, 150), Color.FromArgb(63, 217, 140), ThemeAccess.KoFi),
-        new ThemePalette("Ember", Color.FromArgb(23, 15, 16), Color.FromArgb(31, 21, 23), Color.FromArgb(42, 28, 30), Color.FromArgb(57, 38, 41), Color.FromArgb(244, 233, 231), Color.FromArgb(166, 144, 142), Color.FromArgb(255, 107, 87), ThemeAccess.GitHub),
         new ThemePalette("Daylight", Color.FromArgb(245, 247, 250), Color.FromArgb(255, 255, 255), Color.FromArgb(238, 241, 246), Color.FromArgb(222, 228, 237), Color.FromArgb(16, 21, 28), Color.FromArgb(92, 103, 120), Color.FromArgb(37, 99, 235)),
         new ThemePalette("Steel", Color.FromArgb(17, 19, 23), Color.FromArgb(24, 27, 32), Color.FromArgb(32, 36, 43), Color.FromArgb(44, 49, 58), Color.FromArgb(232, 236, 240), Color.FromArgb(146, 155, 167), Color.FromArgb(158, 190, 219)),
-        new ThemePalette("Lagoon", Color.FromArgb(9, 19, 21), Color.FromArgb(14, 29, 33), Color.FromArgb(20, 41, 46), Color.FromArgb(28, 57, 64), Color.FromArgb(224, 243, 243), Color.FromArgb(126, 165, 168), Color.FromArgb(45, 212, 191), ThemeAccess.KoFi),
+        new ThemePalette("Ember", Color.FromArgb(23, 15, 16), Color.FromArgb(31, 21, 23), Color.FromArgb(42, 28, 30), Color.FromArgb(57, 38, 41), Color.FromArgb(244, 233, 231), Color.FromArgb(166, 144, 142), Color.FromArgb(255, 107, 87), ThemeAccess.GitHub),
         new ThemePalette("Obsidian", Color.FromArgb(10, 10, 12), Color.FromArgb(19, 19, 23), Color.FromArgb(28, 28, 34), Color.FromArgb(42, 42, 50), Color.FromArgb(242, 240, 234), Color.FromArgb(154, 151, 142), Color.FromArgb(227, 179, 65), ThemeAccess.GitHub),
         new ThemePalette("Crimson", Color.FromArgb(21, 12, 14), Color.FromArgb(31, 18, 21), Color.FromArgb(43, 25, 29), Color.FromArgb(58, 34, 40), Color.FromArgb(248, 234, 236), Color.FromArgb(190, 150, 157), Color.FromArgb(255, 77, 109), ThemeAccess.GitHub),
+        new ThemePalette("Midnight", Color.FromArgb(10, 16, 26), Color.FromArgb(16, 24, 37), Color.FromArgb(23, 33, 50), Color.FromArgb(33, 46, 69), Color.FromArgb(230, 238, 247), Color.FromArgb(134, 151, 174), Color.FromArgb(76, 194, 255), ThemeAccess.KoFi),
+        new ThemePalette("Evergreen", Color.FromArgb(10, 18, 15), Color.FromArgb(16, 26, 22), Color.FromArgb(23, 36, 30), Color.FromArgb(33, 50, 42), Color.FromArgb(228, 240, 233), Color.FromArgb(134, 160, 150), Color.FromArgb(63, 217, 140), ThemeAccess.KoFi),
+        new ThemePalette("Lagoon", Color.FromArgb(9, 19, 21), Color.FromArgb(14, 29, 33), Color.FromArgb(20, 41, 46), Color.FromArgb(28, 57, 64), Color.FromArgb(224, 243, 243), Color.FromArgb(126, 165, 168), Color.FromArgb(45, 212, 191), ThemeAccess.KoFi),
         new ThemePalette("Sandstone", Color.FromArgb(250, 246, 240), Color.FromArgb(255, 255, 255), Color.FromArgb(243, 236, 227), Color.FromArgb(226, 216, 203), Color.FromArgb(38, 31, 24), Color.FromArgb(126, 112, 95), Color.FromArgb(194, 112, 58), ThemeAccess.KoFi),
         new ThemePalette("Aurora", Color.FromArgb(14, 12, 26), Color.FromArgb(23, 20, 40), Color.FromArgb(32, 28, 55), Color.FromArgb(45, 39, 74), Color.FromArgb(237, 234, 255), Color.FromArgb(154, 145, 190), Color.FromArgb(167, 139, 250), ThemeAccess.KoFi),
         new ThemePalette("Vapor", Color.FromArgb(20, 11, 36), Color.FromArgb(29, 16, 51), Color.FromArgb(40, 26, 71), Color.FromArgb(59, 39, 102), Color.FromArgb(242, 234, 255), Color.FromArgb(168, 150, 201), Color.FromArgb(255, 79, 216), ThemeAccess.KoFi)
@@ -994,6 +996,12 @@ internal sealed class FlatButton : Control
     public bool Primary { get; set; }
     public int CornerRadius { get; set; } = 10;
 
+    /// <summary>
+    /// Paints the button in this colour regardless of the active theme. Used for
+    /// brand-locked actions such as Ko-fi, which must stay Ko-fi pink.
+    /// </summary>
+    public Color? AccentOverride { get; set; }
+
     public FlatButton()
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
@@ -1032,7 +1040,13 @@ internal sealed class FlatButton : Control
         using var path = Theme.Rounded(rect, radius);
 
         Color text;
-        if (!Enabled)
+        if (AccentOverride is { } accentOverride)
+        {
+            using (var fill = new SolidBrush(accentOverride))
+                g.FillPath(fill, path);
+            text = Theme.OnAccent(accentOverride);
+        }
+        else if (!Enabled)
         {
             using var fill = new SolidBrush(Theme.Field);
             g.FillPath(fill, path);
@@ -1316,6 +1330,7 @@ internal sealed class SignInForm : Form
 {
     private readonly FlatButton _primaryButton = new();
     private readonly FlatButton _secondaryButton = new();
+    private readonly FlatButton _kofiButton = new();
     private readonly Label _statusTitle = new();
     private readonly Label _statusDetail = new();
     private readonly Panel _codeCard = new();
@@ -1447,6 +1462,16 @@ internal sealed class SignInForm : Form
         _secondaryButton.Click += (_, _) => OnSecondary();
         Controls.Add(_secondaryButton);
 
+        // Ko-fi support has no sign-in flow yet. The button is shown in Ko-fi's pink so
+        // the second unlock route is discoverable, but it is inert and keeps its colour
+        // under every theme.
+        _kofiButton.Size = new Size(240, 38);
+        _kofiButton.Location = new Point(pad, 418);
+        _kofiButton.Text = "Sign in with Ko-fi (soon)";
+        _kofiButton.AccentOverride = Theme.KoFiPink;
+        _kofiButton.Enabled = false;
+        Controls.Add(_kofiButton);
+
         KeyDown += (_, e) =>
         {
             if (e.KeyCode == Keys.Escape)
@@ -1460,7 +1485,7 @@ internal sealed class SignInForm : Form
 
     private void ShowSignedInState()
     {
-        SetStatus($"Signed in as {AuthSession.Login}", "The supporter themes are unlocked on this device.");
+        SetStatus($"Signed in as {AuthSession.Login}", "The GitHub themes are unlocked on this device.");
         _codeCard.Visible = false;
         _primaryButton.Text = "Continue";
         _primaryButton.Enabled = true;
@@ -1473,8 +1498,8 @@ internal sealed class SignInForm : Form
         SetStatus(
             "Not signed in",
             GitHubDeviceSignIn.IsConfigured
-                ? "The two supporter themes stay locked until you sign in."
-                : "Sign-in is not configured yet, so the supporter themes stay locked. Add your GitHub OAuth App client id to enable it.");
+                ? $"{Theme.ThemeNamesFor(ThemeAccess.GitHub)} unlock once you sign in."
+                : "Sign-in is not configured yet, so the GitHub themes stay locked. Add your GitHub OAuth App client id to enable it.");
         _codeCard.Visible = false;
         _primaryButton.Text = "Sign in with GitHub";
         _primaryButton.Enabled = GitHubDeviceSignIn.IsConfigured;
@@ -2821,17 +2846,19 @@ public sealed class ConverterForm : Form
                     {
                         Text = AuthSession.HasGitHubAccess && AuthSession.HasKoFiAccess
                             ? "Choose a coordinated palette for the app. Every theme is unlocked."
-                            : $"Choose a coordinated palette for the app. {Theme.ThemeNamesFor(ThemeAccess.Free)} are free; "
-                                + "a gold outline unlocks with GitHub and a pink outline with Ko-fi.",
+                            : $"Free: {Theme.ThemeNamesFor(ThemeAccess.Free)}. Gold outline: GitHub sign-in. Pink outline: Ko-fi.",
                         Font = Theme.UiFont(8.75f),
                         ForeColor = Theme.Muted,
-                        AutoSize = true,
+                        // Capped at the content width so a long line can never widen the
+                        // scrollable area and add a horizontal scrollbar to the page.
+                        AutoSize = false,
+                        Size = new Size(fieldWidth, 32),
                         Location = new Point(0, y + 22)
                     });
 
                     var themeSwatchRow = new FlowLayoutPanel
                     {
-                        Location = new Point(0, y + 44),
+                        Location = new Point(0, y + 60),
                         Size = new Size(fieldWidth, 58),
                         BackColor = Theme.Background,
                         FlowDirection = FlowDirection.LeftToRight,
@@ -2895,7 +2922,7 @@ public sealed class ConverterForm : Form
                     var swatchesPerRow = Math.Max(1, fieldWidth / swatchStride);
                     var swatchRows = (Theme.Palettes.Count + swatchesPerRow - 1) / swatchesPerRow;
                     themeSwatchRow.Height = swatchRows * (ThemeSwatch.SwatchSize.Height + ThemeSwatch.SwatchMargin * 2);
-                    y += 44 + themeSwatchRow.Height + 14;
+                    y += 60 + themeSwatchRow.Height + 14;
 
                     var accentRow = new Panel { Size = new Size(fieldWidth, 30), BackColor = Color.Transparent };
                     accentInput = new TextBox

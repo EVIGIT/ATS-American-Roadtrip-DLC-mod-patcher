@@ -1,5 +1,4 @@
 using System.IO.Compression;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -98,7 +97,6 @@ public static class ModConverter
                     .ToList()
                 : new List<string>();
 
-            var originalDefHashes = HashDefinitionFiles(root);
             var textBeforeMove = ReadAllTextDefinitionPaths(root, stats);
             if (Directory.Exists(truckDef))
             {
@@ -198,7 +196,7 @@ public static class ModConverter
             if (settings.PatchOnly)
             {
                 packRoot = Path.Combine(work, "__patch");
-                BuildPatch(root, packRoot, originalTruckDealerFiles, originalDefHashes, Path.GetFileNameWithoutExtension(settings.InputFile), log);
+                BuildPatch(root, packRoot, originalTruckDealerFiles, Path.GetFileNameWithoutExtension(settings.InputFile), log);
             }
 
             log(settings.PatchOnly
@@ -235,7 +233,6 @@ public static class ModConverter
         string root,
         string patchRoot,
         IReadOnlyList<string> originalTruckDealerFiles,
-        IReadOnlyDictionary<string, string> originalDefHashes,
         string displayName,
         Action<string> log)
     {
@@ -315,26 +312,6 @@ public static class ModConverter
             text = CopyManifestDescription(text, root, patchRoot);
             File.WriteAllText(manifest, text, new UTF8Encoding(false));
         }
-    }
-
-    private static Dictionary<string, string> HashDefinitionFiles(string root)
-    {
-        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var def = Path.Combine(root, "def");
-        if (!Directory.Exists(def))
-            return result;
-
-        foreach (var file in Directory.EnumerateFiles(def, "*", SearchOption.AllDirectories))
-            result[NormalizeRelative(Path.GetRelativePath(root, file))] = HashFile(file);
-        return result;
-    }
-
-    private static string NormalizeRelative(string path) => path.Replace('\\', '/');
-
-    private static string HashFile(string file)
-    {
-        using var stream = File.OpenRead(file);
-        return Convert.ToHexString(SHA256.HashData(stream));
     }
 
     private static string CopyManifestDescription(string manifestText, string root, string patchRoot)
@@ -458,11 +435,13 @@ public static class ModConverter
                 "$1vehicle/car");
         }
 
+        var normalizedVehicleType = (vehicleType ?? "pickup").Trim().ToLowerInvariant();
+
         if (isVehicleDefinitionFile && IsCarDataFile(file))
-            text = AddCarDataAttributes(text, vehicleType);
+            text = AddCarDataAttributes(text, normalizedVehicleType);
 
         if (isVehicleDefinitionFile && IsCarInteriorFile(file))
-            text = AddSpeedLimiterValue(text, vehicleType);
+            text = AddSpeedLimiterValue(text, normalizedVehicleType);
 
         if (!string.Equals(text, original, StringComparison.Ordinal))
         {
@@ -899,13 +878,14 @@ public static class ModConverter
     }
 
     // Values mirror the official Road Trip cars (km/h, 0 = no limiter).
-    public static int DefaultSpeedLimit(string vehicleType) => vehicleType switch
-    {
-        "sedan" => 190,
-        "hatchback" => 180,
-        "van" => 140,
-        _ => 163
-    };
+    public static int DefaultSpeedLimit(string vehicleType) =>
+        (vehicleType ?? "pickup").Trim().ToLowerInvariant() switch
+        {
+            "sedan" => 190,
+            "hatchback" => 180,
+            "van" => 140,
+            _ => 163
+        };
 
     // Cars without speed_limiter_value fall back to the truck speed limit.
     private static string AddSpeedLimiterValue(string text, string vehicleType)

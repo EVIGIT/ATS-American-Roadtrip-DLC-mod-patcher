@@ -1,3 +1,4 @@
 {
-  "dotnet.defaultSolution": "${workspaceFolder}/ATSRoadTripConverter.sln"
+  "dotnet.defaultSolution": "${workspaceFolder}/ATSRoadTripConverter.sln",
+  "window.closeWhenEmpty": true
 }

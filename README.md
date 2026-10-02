@@ -4,21 +4,7 @@ This package is a complete .NET 8 WinForms project, rebuilt from the v2 project 
 
 ## Changelog
 
-### v1.3.2
-
-- Fixed hatchback and van speed limits during conversion.
-- Added automatic installation of validated GitHub releases after download.
-
-### v1.3.1
-
-- Hid the Unreleased section from the in-app release history.
-
-### v1.3
-
-- Updated the app version to v1.3.
-- Added selectable app-wide color themes and live custom accent preview.
-- The in-app changelog reads the local `CHANGELOG.md`, embedded into each build. Add changes and fixes under **Unreleased** as the project is updated; move those notes under a version heading when preparing a release. Rebuild the app to include changelog edits.
-- To append a note to the correct unreleased section, run `python scripts/changelog.py --added "Adds..." --fixed "Fixes..." --changed "Updates..."`.
+See [CHANGELOG.md](CHANGELOG.md) for the full history. The in-app changelog reads the embedded `CHANGELOG.md`, so add changes and fixes under **Unreleased** and rebuild to include them; to append to the correct unreleased section run `python scripts/changelog.py --added "Adds..." --fixed "Fixes..." --changed "Updates..."`.
 
 ## Development
 
@@ -32,26 +18,9 @@ To publish a release, update `Program.AppVersion` and add a matching `## vX.Y` s
 
 On Windows, run `dotnet run --project Tests/LocalUpdaterSmokeTest/LocalUpdaterSmokeTest.csproj`. The test uses temporary folders and exercises the updater's folder validation and copy script without modifying an installed app.
 
-### v12.1
+## Converter test
 
-**Fixes**
-- Fixed texture breaking when adding multiple mods through the patcher
-- Fixed def files not working in patch mode
-- Fixed asset path references not being converted in patch mode
-- Fixed vehicle assets not being included in patch files
-
-**Changes**
-- All definition files are now included in patches (removed hash-based skipping)
-- Vehicle assets are now copied from vehicle/truck/ to vehicle/car/ in patches
-- Asset path references are now converted in patch mode
-- Multiple mods can now be patched together without conflicts
-- Updated UI descriptions to reflect new patch behavior
-- Added Changelog button to view version history
-
-**Technical Details**
-- Asset Path Conversion: Game can now correctly locate textures and models
-- Asset Copying: Textures, models, and sounds load correctly in patch mode
-- Definition File Handling: Better compatibility when patching multiple mods
+Run `dotnet run --project Tests/ModConverterVerify/ModConverterVerify.csproj` to exercise the converter on a synthetic truck mod. It checks that the configured vehicle-type speed limits and `tags[]` entry are applied case-insensitively, that `def/vehicle/truck` is converted to `def/vehicle/car`, and that the truck dealer is translated to `car_dealer`.
 
 ## What is included
 

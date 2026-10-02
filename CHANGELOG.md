@@ -1,6 +1,6 @@
 # ATS American Roadtrip Car Patcher
 
-Current App Version: v1.3.2
+Current App Version: v1.3.3
 
 ## Unreleased
 
@@ -9,6 +9,28 @@ Current App Version: v1.3.2
 ### Fixed
 
 ### Changed
+
+## v1.3.3
+
+### Added
+- New "Accounts" settings tab holding GitHub sign-in, sign-out, a greyed-out Ko-fi sign-in placeholder, and a breakdown of what each account level unlocks; it used to sit inside Customization.
+- Three theme tiers: Roadtrip, Daylight and Steel are free; Ember, Obsidian and Crimson unlock with a GitHub sign-in; Midnight, Evergreen, Lagoon, Sandstone, Aurora and Vapor are reserved for Ko-fi support once that sign-in exists.
+- A "Sign in with Ko-fi" button on the startup sign-in window. It is inert for now and stays Ko-fi pink under every theme.
+- Locked theme swatches are outlined in the colour of the tier that unlocks them: gold for the GitHub themes and Ko-fi's pink for the Ko-fi themes, with the padlock tinted to match.
+- Locked themes now explain themselves in a themed in-app dialog instead of a system message box: GitHub themes offer the sign-in, Ko-fi themes explain that Ko-fi sign-in is coming soon.
+
+### Fixed
+- Applied the configured vehicle-type speed limits (sedan, hatchback, van) during conversion; a capitalized vehicle-type selection from the main window fell through to the pickup limit.
+- Fixed the Vehicle Type dropdown going blank in the main window after saving settings.
+- Removed the horizontal scrollbar on the Customization tab; the theme description can no longer widen the scrollable page.
+- Fixed the locked-theme dialog message running past the right edge of the window.
+- Windows title bar now follows the active theme instead of staying dark on the light (Daylight) theme.
+
+### Changed
+- Moved account sign-in out of Customization into its own Accounts tab, which also lists the free, GitHub and Ko-fi themes separately.
+- Grouped the theme grid by access tier: the three free themes first, then the GitHub-only themes, then the Ko-fi themes.
+- Removed an unused definition-file hashing pass that ran on every conversion.
+- Made the Advanced settings functional: "Show detailed conversion logs" now filters per-file log lines, "Create a backup of the original mod" copies the input to `<input>.bak`, and "Automatically save settings after conversion" persists the last used dealer, vehicle type, and output folder.
 
 ## v1.3.2
 
