@@ -160,6 +160,90 @@ public static class SettingsManager
     }
 }
 
+/// <summary>
+/// Wraps the sign-in token with Windows DPAPI (CryptProtectData) so it can only be
+/// decrypted by this user account on this machine. P/Invoked straight from crypt32.dll
+/// so the app keeps its zero-dependency footprint - the ProtectedData NuGet package is
+/// not needed for a net8.0-windows target.
+/// </summary>
+internal static class LocalSecretProtector
+{
+    private const int CryptprotectUiForbidden = 0x1;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct DataBlob
+    {
+        public int Size;
+        public IntPtr Data;
+    }
+
+    [DllImport("crypt32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool CryptProtectData(
+        ref DataBlob input, string? description, IntPtr entropy, IntPtr reserved, IntPtr prompt, int flags, out DataBlob output);
+
+    [DllImport("crypt32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool CryptUnprotectData(
+        ref DataBlob input, IntPtr description, IntPtr entropy, IntPtr reserved, IntPtr prompt, int flags, out DataBlob output);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr LocalFree(IntPtr handle);
+
+    public static bool TryProtect(string plainText, out string protectedText)
+    {
+        return TryTransform(System.Text.Encoding.UTF8.GetBytes(plainText), protect: true, out protectedText);
+    }
+
+    public static bool TryUnprotect(string protectedText, out string plainText)
+    {
+        return TryTransform(Convert.FromBase64String(protectedText), protect: false, out plainText);
+    }
+
+    private static bool TryTransform(byte[] data, bool protect, out string result)
+    {
+        result = "";
+        if (data.Length == 0)
+            return false;
+
+        var input = default(DataBlob);
+        input.Size = data.Length;
+        input.Data = Marshal.AllocHGlobal(data.Length);
+        try
+        {
+            Marshal.Copy(data, 0, input.Data, data.Length);
+            DataBlob output;
+            var ok = protect
+                ? CryptProtectData(ref input, "ATS Roadtrip Patcher session", IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, CryptprotectUiForbidden, out output)
+                : CryptUnprotectData(ref input, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, CryptprotectUiForbidden, out output);
+            if (!ok)
+                return false;
+            try
+            {
+                var bytes = new byte[output.Size];
+                Marshal.Copy(output.Data, bytes, 0, output.Size);
+                result = protect ? Convert.ToBase64String(bytes) : System.Text.Encoding.UTF8.GetString(bytes);
+                return true;
+            }
+            finally
+            {
+                if (output.Data != IntPtr.Zero)
+                    LocalFree(output.Data);
+            }
+        }
+        catch (DllNotFoundException)
+        {
+            return false;
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return false;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(input.Data);
+        }
+    }
+}
+
 // Supporter sign-in state.
 //
 // A successful GitHub sign-in is what currently unlocks the exclusive themes. When the
@@ -189,8 +273,31 @@ internal static class AuthSession
                 return;
             using var document = JsonDocument.Parse(File.ReadAllText(SessionPath));
             var root = document.RootElement;
-            _accessToken = root.TryGetProperty("accessToken", out var token) ? token.GetString() : null;
-            _login = root.TryGetProperty("login", out var login) ? login.GetString() : null;
+            var storedToken = ReadString(root, "accessToken");
+            _login = ReadString(root, "login");
+            if (string.IsNullOrWhiteSpace(storedToken) || string.IsNullOrWhiteSpace(_login))
+            {
+                _accessToken = null;
+                _login = null;
+                return;
+            }
+
+            // Files written by older builds hold the raw token; re-save them encrypted.
+            if (ReadBoolean(root, "protected"))
+            {
+                _accessToken = LocalSecretProtector.TryUnprotect(storedToken!, out var plain) ? plain : null;
+                if (_accessToken == null)
+                {
+                    // Not decryptable by this Windows user (different account or machine).
+                    _login = null;
+                    DeleteSessionFile();
+                }
+            }
+            else
+            {
+                _accessToken = storedToken;
+                Save(_accessToken, _login!);
+            }
         }
         catch
         {
@@ -206,32 +313,60 @@ internal static class AuthSession
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(SessionPath)!);
-            // Note: stored as plain JSON. The app ships without a crypto package, so the
-            // token is readable by anything running as this user. Sign out clears it.
+            if (!LocalSecretProtector.TryProtect(accessToken, out var protectedToken))
+            {
+                // Never write a readable token to disk: the sign-in still works for this
+                // session, it just will not be remembered next launch.
+                DeleteSessionFile();
+                return;
+            }
+
             File.WriteAllText(SessionPath, JsonSerializer.Serialize(new AuthSessionFile
             {
-                AccessToken = accessToken,
-                Login = login
-            }));
+                AccessToken = protectedToken,
+                Login = login,
+                Protected = true
+            }, FileOptions));
         }
         catch
         {
         }
     }
 
+    private static readonly JsonSerializerOptions FileOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
+    // Reads a string property regardless of casing so sessions written by older builds
+    // (AccessToken) and the current camelCase format both load.
+    private static string? ReadString(JsonElement root, string name)
+    {
+        foreach (var property in root.EnumerateObject())
+        {
+            if (property.Name.Equals(name, StringComparison.OrdinalIgnoreCase) && property.Value.ValueKind == JsonValueKind.String)
+                return property.Value.GetString();
+        }
+
+        return null;
+    }
+
+    private static bool ReadBoolean(JsonElement root, string name)
+    {
+        foreach (var property in root.EnumerateObject())
+        {
+            if (property.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                return property.Value.ValueKind == JsonValueKind.True;
+        }
+
+        return false;
+    }
+
     public static void SignOut()
     {
         _accessToken = null;
         _login = null;
-        try
-        {
-            if (File.Exists(SessionPath))
-                File.Delete(SessionPath);
-        }
-        catch
-        {
-        }
-
+        DeleteSessionFile();
         EnforceThemeAccess();
     }
 
@@ -250,10 +385,23 @@ internal static class AuthSession
         }
     }
 
+    private static void DeleteSessionFile()
+    {
+        try
+        {
+            if (File.Exists(SessionPath))
+                File.Delete(SessionPath);
+        }
+        catch
+        {
+        }
+    }
+
     private sealed class AuthSessionFile
     {
         public string AccessToken { get; set; } = "";
         public string Login { get; set; } = "";
+        public bool Protected { get; set; }
     }
 }
 
@@ -271,10 +419,25 @@ internal sealed record GitHubSignInRequest(
 /// </summary>
 internal static class GitHubDeviceSignIn
 {
-    // TODO: replace with the client id of your GitHub OAuth App
-    // (Settings -> Developer settings -> OAuth Apps -> New OAuth App), with
-    // "Enable device flow" turned on. Until then sign-in stays disabled in the UI.
-    public const string ClientId = "REPLACE_WITH_GITHUB_OAUTH_CLIENT_ID";
+    /// <summary>
+    /// Client id of the GitHub OAuth App used for device-flow sign-in. Set the
+    /// ATS_GITHUB_OAUTH_CLIENT_ID environment variable to supply it without a rebuild
+    /// (handy for testing); otherwise the compiled-in fallback is used.
+    /// Create the app under Settings -> Developer settings -> OAuth Apps and tick
+    /// "Enable device flow".
+    /// </summary>
+    public const string ClientIdEnvironmentVariable = "ATS_GITHUB_OAUTH_CLIENT_ID";
+
+    private const string FallbackClientId = "REPLACE_WITH_GITHUB_OAUTH_CLIENT_ID";
+
+    public static string ClientId
+    {
+        get
+        {
+            var fromEnvironment = Environment.GetEnvironmentVariable(ClientIdEnvironmentVariable);
+            return !string.IsNullOrWhiteSpace(fromEnvironment) ? fromEnvironment.Trim() : FallbackClientId;
+        }
+    }
 
     private const string DeviceCodeUrl = "https://github.com/login/device/code";
     private const string AccessTokenUrl = "https://github.com/login/oauth/access_token";
@@ -303,11 +466,14 @@ internal static class GitHubDeviceSignIn
         });
         using var response = await Http.PostAsync(DeviceCodeUrl, content, cancellationToken).ConfigureAwait(false);
         var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        using var document = JsonDocument.Parse(body);
+        if (!response.IsSuccessStatusCode)
+            throw DescribeFailure(response, body, "GitHub would not start the sign-in request.");
+
+        using var document = ParseOrThrow(body, "GitHub did not return a sign-in code.");
         var root = document.RootElement;
 
         if (!root.TryGetProperty("device_code", out var deviceCode) || !root.TryGetProperty("user_code", out var userCode))
-            throw new InvalidOperationException(ReadError(root, "GitHub did not start the sign-in request."));
+            throw new InvalidOperationException(ReadError(root, "GitHub did not return a sign-in code."));
 
         return new GitHubSignInRequest(
             deviceCode.GetString() ?? "",
@@ -335,7 +501,11 @@ internal static class GitHubDeviceSignIn
                 ["grant_type"] = "urn:ietf:params:oauth:grant-type:device_code"
             });
             using var response = await Http.PostAsync(AccessTokenUrl, content, cancellationToken).ConfigureAwait(false);
-            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+                throw DescribeFailure(response, body, "GitHub could not complete the sign-in request.");
+
+            using var document = ParseOrThrow(body, "GitHub did not return a sign-in token.");
             var root = document.RootElement;
 
             if (root.TryGetProperty("access_token", out var token) && !string.IsNullOrWhiteSpace(token.GetString()))
@@ -372,9 +542,9 @@ internal static class GitHubDeviceSignIn
         using var response = await Http.SendAsync(request, cancellationToken).ConfigureAwait(false);
         var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"GitHub returned {(int)response.StatusCode} when reading your profile.");
+            throw new InvalidOperationException(DescribeFailure(response, body, "GitHub would not confirm your profile.").Message);
 
-        using var document = JsonDocument.Parse(body);
+        using var document = ParseOrThrow(body, "GitHub did not return your profile.");
         return document.RootElement.TryGetProperty("login", out var login) && !string.IsNullOrWhiteSpace(login.GetString())
             ? login.GetString()!
             : "GitHub user";
@@ -398,6 +568,43 @@ internal static class GitHubDeviceSignIn
         if (root.TryGetProperty("error", out var error) && !string.IsNullOrWhiteSpace(error.GetString()))
             return error.GetString()!;
         return fallback;
+    }
+
+    private static JsonDocument ParseOrThrow(string body, string fallback)
+    {
+        try
+        {
+            return JsonDocument.Parse(body);
+        }
+        catch (JsonException)
+        {
+            // Never surface a raw parser message to the user.
+            throw new InvalidOperationException($"{fallback} Check your internet connection and try again.");
+        }
+    }
+
+    // Turns any unsuccessful GitHub response into a readable error. GitHub usually
+    // answers with JSON, but proxies and invalid hosts can return HTML or nothing.
+    private static Exception DescribeFailure(HttpResponseMessage response, string body, string fallback)
+    {
+        var status = (int)response.StatusCode;
+        if (status is 401 or 403 or 404)
+        {
+            // GitHub answers an unknown client id with a bare "Not Found", which tells
+            // the reader nothing, so lead with what they can actually act on.
+            return new InvalidOperationException(
+                $"{fallback} GitHub returned HTTP {status}, which usually means the OAuth app client id is wrong or device flow is not enabled for that app.");
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            return new InvalidOperationException(ReadError(document.RootElement, $"{fallback} (HTTP {status})"));
+        }
+        catch (JsonException)
+        {
+            return new InvalidOperationException($"{fallback} GitHub returned HTTP {status}.");
+        }
     }
 }
 
@@ -1213,7 +1420,7 @@ internal sealed class SignInForm : Form
             "Not signed in",
             GitHubDeviceSignIn.IsConfigured
                 ? "The two supporter themes stay locked until you sign in."
-                : "Sign-in is not configured in this build yet, so the supporter themes stay locked.");
+                : "Sign-in is not configured yet, so the supporter themes stay locked. Add your GitHub OAuth App client id to enable it.");
         _codeCard.Visible = false;
         _primaryButton.Text = "Sign in with GitHub";
         _primaryButton.Enabled = GitHubDeviceSignIn.IsConfigured;
