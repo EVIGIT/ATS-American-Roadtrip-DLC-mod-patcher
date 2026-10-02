@@ -192,7 +192,12 @@ internal static class Theme
         new ThemePalette("Midnight", Color.FromArgb(10, 16, 26), Color.FromArgb(16, 24, 37), Color.FromArgb(23, 33, 50), Color.FromArgb(33, 46, 69), Color.FromArgb(230, 238, 247), Color.FromArgb(134, 151, 174), Color.FromArgb(76, 194, 255)),
         new ThemePalette("Evergreen", Color.FromArgb(10, 18, 15), Color.FromArgb(16, 26, 22), Color.FromArgb(23, 36, 30), Color.FromArgb(33, 50, 42), Color.FromArgb(228, 240, 233), Color.FromArgb(134, 160, 150), Color.FromArgb(63, 217, 140)),
         new ThemePalette("Ember", Color.FromArgb(23, 15, 16), Color.FromArgb(31, 21, 23), Color.FromArgb(42, 28, 30), Color.FromArgb(57, 38, 41), Color.FromArgb(244, 233, 231), Color.FromArgb(166, 144, 142), Color.FromArgb(255, 107, 87)),
-        new ThemePalette("Daylight", Color.FromArgb(245, 247, 250), Color.FromArgb(255, 255, 255), Color.FromArgb(238, 241, 246), Color.FromArgb(222, 228, 237), Color.FromArgb(16, 21, 28), Color.FromArgb(92, 103, 120), Color.FromArgb(37, 99, 235))
+        new ThemePalette("Daylight", Color.FromArgb(245, 247, 250), Color.FromArgb(255, 255, 255), Color.FromArgb(238, 241, 246), Color.FromArgb(222, 228, 237), Color.FromArgb(16, 21, 28), Color.FromArgb(92, 103, 120), Color.FromArgb(37, 99, 235)),
+        new ThemePalette("Steel", Color.FromArgb(17, 19, 23), Color.FromArgb(24, 27, 32), Color.FromArgb(32, 36, 43), Color.FromArgb(44, 49, 58), Color.FromArgb(232, 236, 240), Color.FromArgb(146, 155, 167), Color.FromArgb(158, 190, 219)),
+        new ThemePalette("Lagoon", Color.FromArgb(9, 19, 21), Color.FromArgb(14, 29, 33), Color.FromArgb(20, 41, 46), Color.FromArgb(28, 57, 64), Color.FromArgb(224, 243, 243), Color.FromArgb(126, 165, 168), Color.FromArgb(45, 212, 191)),
+        new ThemePalette("Aurora", Color.FromArgb(14, 12, 26), Color.FromArgb(23, 20, 40), Color.FromArgb(32, 28, 55), Color.FromArgb(45, 39, 74), Color.FromArgb(237, 234, 255), Color.FromArgb(154, 145, 190), Color.FromArgb(167, 139, 250)),
+        new ThemePalette("Crimson", Color.FromArgb(21, 12, 14), Color.FromArgb(31, 18, 21), Color.FromArgb(43, 25, 29), Color.FromArgb(58, 34, 40), Color.FromArgb(248, 234, 236), Color.FromArgb(190, 150, 157), Color.FromArgb(255, 77, 109)),
+        new ThemePalette("Sandstone", Color.FromArgb(250, 246, 240), Color.FromArgb(255, 255, 255), Color.FromArgb(243, 236, 227), Color.FromArgb(226, 216, 203), Color.FromArgb(38, 31, 24), Color.FromArgb(126, 112, 95), Color.FromArgb(194, 112, 58))
     });
 
     private static ThemePalette CurrentPalette =>
@@ -1855,7 +1860,14 @@ public sealed class ConverterForm : Form
                         themeSwatchRow.Controls.Add(swatch);
                     }
                     contentScroll.Controls.Add(themeSwatchRow);
-                    y += 112;
+
+                    // The swatch strip wraps, so size the panel to the number of rows the
+                    // current width produces instead of assuming a single line.
+                    var swatchStride = 102; // 96px swatch + 3px margin on each side.
+                    var swatchesPerRow = Math.Max(1, fieldWidth / swatchStride);
+                    var swatchRows = (Theme.Palettes.Count + swatchesPerRow - 1) / swatchesPerRow;
+                    themeSwatchRow.Height = swatchRows * 58;
+                    y += 44 + themeSwatchRow.Height + 14;
 
                     var accentRow = new Panel { Size = new Size(fieldWidth, 30), BackColor = Color.Transparent };
                     accentInput = new TextBox
