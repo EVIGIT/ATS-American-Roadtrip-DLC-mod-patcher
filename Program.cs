@@ -652,10 +652,10 @@ internal static class Theme
         new ThemePalette("Daylight", Color.FromArgb(245, 247, 250), Color.FromArgb(255, 255, 255), Color.FromArgb(238, 241, 246), Color.FromArgb(222, 228, 237), Color.FromArgb(16, 21, 28), Color.FromArgb(92, 103, 120), Color.FromArgb(37, 99, 235)),
         new ThemePalette("Steel", Color.FromArgb(17, 19, 23), Color.FromArgb(24, 27, 32), Color.FromArgb(32, 36, 43), Color.FromArgb(44, 49, 58), Color.FromArgb(232, 236, 240), Color.FromArgb(146, 155, 167), Color.FromArgb(158, 190, 219)),
         new ThemePalette("Lagoon", Color.FromArgb(9, 19, 21), Color.FromArgb(14, 29, 33), Color.FromArgb(20, 41, 46), Color.FromArgb(28, 57, 64), Color.FromArgb(224, 243, 243), Color.FromArgb(126, 165, 168), Color.FromArgb(45, 212, 191)),
-        new ThemePalette("Aurora", Color.FromArgb(14, 12, 26), Color.FromArgb(23, 20, 40), Color.FromArgb(32, 28, 55), Color.FromArgb(45, 39, 74), Color.FromArgb(237, 234, 255), Color.FromArgb(154, 145, 190), Color.FromArgb(167, 139, 250)),
+        new ThemePalette("Aurora", Color.FromArgb(14, 12, 26), Color.FromArgb(23, 20, 40), Color.FromArgb(32, 28, 55), Color.FromArgb(45, 39, 74), Color.FromArgb(237, 234, 255), Color.FromArgb(154, 145, 190), Color.FromArgb(167, 139, 250), true),
         new ThemePalette("Crimson", Color.FromArgb(21, 12, 14), Color.FromArgb(31, 18, 21), Color.FromArgb(43, 25, 29), Color.FromArgb(58, 34, 40), Color.FromArgb(248, 234, 236), Color.FromArgb(190, 150, 157), Color.FromArgb(255, 77, 109)),
         new ThemePalette("Sandstone", Color.FromArgb(250, 246, 240), Color.FromArgb(255, 255, 255), Color.FromArgb(243, 236, 227), Color.FromArgb(226, 216, 203), Color.FromArgb(38, 31, 24), Color.FromArgb(126, 112, 95), Color.FromArgb(194, 112, 58)),
-        new ThemePalette("Obsidian", Color.FromArgb(10, 10, 12), Color.FromArgb(19, 19, 23), Color.FromArgb(28, 28, 34), Color.FromArgb(42, 42, 50), Color.FromArgb(242, 240, 234), Color.FromArgb(154, 151, 142), Color.FromArgb(227, 179, 65), true),
+        new ThemePalette("Obsidian", Color.FromArgb(10, 10, 12), Color.FromArgb(19, 19, 23), Color.FromArgb(28, 28, 34), Color.FromArgb(42, 42, 50), Color.FromArgb(242, 240, 234), Color.FromArgb(154, 151, 142), Color.FromArgb(227, 179, 65)),
         new ThemePalette("Vapor", Color.FromArgb(20, 11, 36), Color.FromArgb(29, 16, 51), Color.FromArgb(40, 26, 71), Color.FromArgb(59, 39, 102), Color.FromArgb(242, 234, 255), Color.FromArgb(168, 150, 201), Color.FromArgb(255, 79, 216), true)
     });
 
@@ -676,6 +676,18 @@ internal static class Theme
     public static Color Border => CurrentPalette.Border;
     public static Color Text => CurrentPalette.Text;
     public static Color Muted => CurrentPalette.Muted;
+    /// <summary>Lists the locked palettes for prompts, e.g. "Aurora and Vapor".</summary>
+    public static string ExclusiveThemeNames()
+    {
+        var names = Palettes.Where(palette => palette.Exclusive).Select(palette => palette.Name).ToArray();
+        return names.Length switch
+        {
+            0 => "the supporter themes",
+            1 => names[0],
+            _ => string.Join(", ", names.Take(names.Length - 1)) + " and " + names[^1]
+        };
+    }
+
     public static Color PresetAccent(string name) =>
         Palettes.FirstOrDefault(palette => palette.Name.Equals(name, StringComparison.OrdinalIgnoreCase))?.Accent ?? Palettes[0].Accent;
     public static Color Accent
@@ -1317,7 +1329,7 @@ internal sealed class SignInForm : Form
         });
         Controls.Add(new Label
         {
-            Text = "Obsidian and Vapor are reserved for supporters. Sign in with GitHub to use them, "
+            Text = $"{Theme.ExclusiveThemeNames()} are reserved for supporters. Sign in with GitHub to use them, "
                 + "or continue without an account and keep every free theme.",
             Font = Theme.UiFont(9f),
             ForeColor = Theme.Muted,
@@ -1525,6 +1537,122 @@ internal sealed class SignInForm : Form
             _signIn?.Dispose();
             _signIn = null;
         }
+    }
+}
+
+/// <summary>Small circular info badge used by the themed confirm dialog.</summary>
+internal sealed class InfoDot : Control
+{
+    public InfoDot()
+    {
+        Size = new Size(30, 30);
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
+                 ControlStyles.UserPaint, true);
+        Font = Theme.UiFont(11f, FontStyle.Bold);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        // Fill the square with whatever is behind the badge so the rounded corners of
+        // the circle never show a stray control colour.
+        using (var backdrop = new SolidBrush(Theme.HostColor(this)))
+            g.FillRectangle(backdrop, ClientRectangle);
+        var rect = new Rectangle(0, 0, Width - 1, Height - 1);
+        using (var fill = new SolidBrush(Theme.Info))
+            g.FillEllipse(fill, rect);
+        TextRenderer.DrawText(g, "i", Font, rect, Theme.OnAccent(Theme.Info),
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+    }
+}
+
+/// <summary>
+/// Themed replacement for MessageBox, so in-app prompts follow the user's chosen
+/// palette instead of the system look.
+/// </summary>
+internal sealed class ThemedConfirmForm : Form
+{
+    public ThemedConfirmForm(string title, string message, string acceptText, string cancelText)
+    {
+        Text = title;
+        BackColor = Theme.Background;
+        ForeColor = Theme.Text;
+        Font = Theme.UiFont(9.5f);
+        ClientSize = new Size(520, 244);
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        MaximizeBox = false;
+        MinimizeBox = false;
+        ShowInTaskbar = false;
+        StartPosition = FormStartPosition.CenterParent;
+        DoubleBuffered = true;
+
+        const int pad = 28;
+        const int width = 520 - pad * 2;
+
+        Controls.Add(new InfoDot { Location = new Point(pad, 24) });
+        Controls.Add(new Label
+        {
+            Text = title,
+            Font = Theme.UiFont(12f, FontStyle.Bold),
+            ForeColor = Theme.Text,
+            AutoSize = true,
+            Location = new Point(pad + 42, 26)
+        });
+        Controls.Add(new Label
+        {
+            Text = message,
+            Font = Theme.UiFont(9.5f),
+            ForeColor = Theme.Muted,
+            AutoSize = false,
+            Size = new Size(width, 60),
+            Location = new Point(pad + 42, 56)
+        });
+
+        var accept = new FlatButton
+        {
+            Text = acceptText,
+            Size = new Size(190, 36),
+            Location = new Point(pad, 176),
+            Primary = true
+        };
+        accept.Click += (_, _) => Finish(DialogResult.OK);
+        Controls.Add(accept);
+
+        var cancel = new FlatButton
+        {
+            Text = cancelText,
+            Size = new Size(150, 36),
+            Location = new Point(520 - pad - 150, 176)
+        };
+        cancel.Click += (_, _) => Finish(DialogResult.Cancel);
+        Controls.Add(cancel);
+
+        KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Escape)
+            {
+                Finish(DialogResult.Cancel);
+                e.Handled = true;
+            }
+            else if (e.KeyCode == Keys.Enter)
+            {
+                Finish(DialogResult.OK);
+                e.Handled = true;
+            }
+        };
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        ConverterForm.ApplyDarkTitleBar(this);
+    }
+
+    private void Finish(DialogResult result)
+    {
+        DialogResult = result;
+        Close();
     }
 }
 
@@ -2667,15 +2795,13 @@ public sealed class ConverterForm : Form
                         };
                         swatch.LockedClicked += (_, _) =>
                         {
-                            if (MessageBox.Show(
-                                    settingsPage,
-                                    $"{palette.Name} is a supporter theme. Sign in with GitHub to unlock it?",
-                                    "Supporter theme",
-                                    MessageBoxButtons.YesNo,
-                                    MessageBoxIcon.Information) == DialogResult.Yes)
-                            {
+                            using var prompt = new ThemedConfirmForm(
+                                "Supporter theme",
+                                $"{palette.Name} is reserved for supporters. Sign in with GitHub to unlock {Theme.ExclusiveThemeNames()}?",
+                                "Sign in with GitHub",
+                                "Not now");
+                            if (prompt.ShowDialog(settingsPage) == DialogResult.OK)
                                 PromptSignIn();
-                            }
                         };
                         swatch.Click += (_, _) =>
                         {
