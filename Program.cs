@@ -323,6 +323,12 @@ internal sealed class ThemeSwatch : Control
     private bool _selected;
 
     public ThemePalette Palette { get; }
+
+    // Kept here so the settings layout can size the swatch grid (rows x columns)
+    // from the same numbers the control actually uses.
+    public static readonly Size SwatchSize = new(88, 50);
+    public static readonly int SwatchMargin = 3;
+
     public bool Selected
     {
         get => _selected;
@@ -340,8 +346,8 @@ internal sealed class ThemeSwatch : Control
         Palette = palette;
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
                  ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
-        Size = new Size(96, 52);
-        Margin = new Padding(3);
+        Size = SwatchSize;
+        Margin = new Padding(SwatchMargin);
         Cursor = Cursors.Hand;
         TabStop = true;
         AccessibleRole = AccessibleRole.RadioButton;
@@ -1863,10 +1869,10 @@ public sealed class ConverterForm : Form
 
                     // The swatch strip wraps, so size the panel to the number of rows the
                     // current width produces instead of assuming a single line.
-                    var swatchStride = 102; // 96px swatch + 3px margin on each side.
+                    var swatchStride = ThemeSwatch.SwatchSize.Width + ThemeSwatch.SwatchMargin * 2;
                     var swatchesPerRow = Math.Max(1, fieldWidth / swatchStride);
                     var swatchRows = (Theme.Palettes.Count + swatchesPerRow - 1) / swatchesPerRow;
-                    themeSwatchRow.Height = swatchRows * 58;
+                    themeSwatchRow.Height = swatchRows * (ThemeSwatch.SwatchSize.Height + ThemeSwatch.SwatchMargin * 2);
                     y += 44 + themeSwatchRow.Height + 14;
 
                     var accentRow = new Panel { Size = new Size(fieldWidth, 30), BackColor = Color.Transparent };
