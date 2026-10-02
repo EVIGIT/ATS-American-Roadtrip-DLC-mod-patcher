@@ -652,10 +652,10 @@ internal static class Theme
         new ThemePalette("Daylight", Color.FromArgb(245, 247, 250), Color.FromArgb(255, 255, 255), Color.FromArgb(238, 241, 246), Color.FromArgb(222, 228, 237), Color.FromArgb(16, 21, 28), Color.FromArgb(92, 103, 120), Color.FromArgb(37, 99, 235)),
         new ThemePalette("Steel", Color.FromArgb(17, 19, 23), Color.FromArgb(24, 27, 32), Color.FromArgb(32, 36, 43), Color.FromArgb(44, 49, 58), Color.FromArgb(232, 236, 240), Color.FromArgb(146, 155, 167), Color.FromArgb(158, 190, 219)),
         new ThemePalette("Lagoon", Color.FromArgb(9, 19, 21), Color.FromArgb(14, 29, 33), Color.FromArgb(20, 41, 46), Color.FromArgb(28, 57, 64), Color.FromArgb(224, 243, 243), Color.FromArgb(126, 165, 168), Color.FromArgb(45, 212, 191)),
-        new ThemePalette("Aurora", Color.FromArgb(14, 12, 26), Color.FromArgb(23, 20, 40), Color.FromArgb(32, 28, 55), Color.FromArgb(45, 39, 74), Color.FromArgb(237, 234, 255), Color.FromArgb(154, 145, 190), Color.FromArgb(167, 139, 250), true),
+        new ThemePalette("Obsidian", Color.FromArgb(10, 10, 12), Color.FromArgb(19, 19, 23), Color.FromArgb(28, 28, 34), Color.FromArgb(42, 42, 50), Color.FromArgb(242, 240, 234), Color.FromArgb(154, 151, 142), Color.FromArgb(227, 179, 65)),
         new ThemePalette("Crimson", Color.FromArgb(21, 12, 14), Color.FromArgb(31, 18, 21), Color.FromArgb(43, 25, 29), Color.FromArgb(58, 34, 40), Color.FromArgb(248, 234, 236), Color.FromArgb(190, 150, 157), Color.FromArgb(255, 77, 109)),
         new ThemePalette("Sandstone", Color.FromArgb(250, 246, 240), Color.FromArgb(255, 255, 255), Color.FromArgb(243, 236, 227), Color.FromArgb(226, 216, 203), Color.FromArgb(38, 31, 24), Color.FromArgb(126, 112, 95), Color.FromArgb(194, 112, 58)),
-        new ThemePalette("Obsidian", Color.FromArgb(10, 10, 12), Color.FromArgb(19, 19, 23), Color.FromArgb(28, 28, 34), Color.FromArgb(42, 42, 50), Color.FromArgb(242, 240, 234), Color.FromArgb(154, 151, 142), Color.FromArgb(227, 179, 65)),
+        new ThemePalette("Aurora", Color.FromArgb(14, 12, 26), Color.FromArgb(23, 20, 40), Color.FromArgb(32, 28, 55), Color.FromArgb(45, 39, 74), Color.FromArgb(237, 234, 255), Color.FromArgb(154, 145, 190), Color.FromArgb(167, 139, 250), true),
         new ThemePalette("Vapor", Color.FromArgb(20, 11, 36), Color.FromArgb(29, 16, 51), Color.FromArgb(40, 26, 71), Color.FromArgb(59, 39, 102), Color.FromArgb(242, 234, 255), Color.FromArgb(168, 150, 201), Color.FromArgb(255, 79, 216), true)
     });
 
@@ -2931,7 +2931,9 @@ public sealed class ConverterForm : Form
                         PreviewFontSettings();
                     };
                     AddField("Font Size", "Base interface text size", fontSizeInput);
+                    break;
 
+                case "Accounts":
                     contentScroll.Controls.Add(new Label
                     {
                         Text = "Account",
@@ -2975,7 +2977,27 @@ public sealed class ConverterForm : Form
                     accountRow.Controls.Add(accountSignInButton);
                     accountRow.Controls.Add(accountSignOutButton);
                     contentScroll.Controls.Add(accountRow);
-                    y += 86;
+                    y += 96;
+
+                    contentScroll.Controls.Add(new Label
+                    {
+                        Text = "Supporter themes",
+                        Font = Theme.UiFont(10f, FontStyle.Bold),
+                        ForeColor = Theme.Text,
+                        AutoSize = true,
+                        Location = new Point(0, y)
+                    });
+                    contentScroll.Controls.Add(new Label
+                    {
+                        Text = AuthSession.HasSupporterAccess
+                            ? $"{Theme.ExclusiveThemeNames()} are unlocked with this account."
+                            : $"{Theme.ExclusiveThemeNames()} stay locked until you sign in.",
+                        Font = Theme.UiFont(8.75f),
+                        ForeColor = Theme.Muted,
+                        AutoSize = true,
+                        Location = new Point(0, y + 22)
+                    });
+                    y += 50;
                     break;
 
                 case "Advanced":
@@ -3042,7 +3064,7 @@ public sealed class ConverterForm : Form
             }
         }
 
-        var categories = new[] { "General", "Customization", "Advanced" };
+        var categories = new[] { "General", "Customization", "Accounts", "Advanced" };
         var categoryButtons = new List<FlatButton>();
         var sidebarY = 20;
 
