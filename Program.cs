@@ -160,6 +160,247 @@ public static class SettingsManager
     }
 }
 
+// Supporter sign-in state.
+//
+// A successful GitHub sign-in is what currently unlocks the exclusive themes. When the
+// Ko-fi page is live, swap the body of HasSupporterAccess for a membership check and
+// nothing else in the app has to change.
+internal static class AuthSession
+{
+    private static readonly string SessionPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "ATSRoadTripConverter",
+        "auth.json");
+
+    private static string? _accessToken;
+    private static string? _login;
+
+    public static string? Login => string.IsNullOrWhiteSpace(_login) ? null : _login;
+
+    public static bool IsSignedIn => Login != null && !string.IsNullOrWhiteSpace(_accessToken);
+
+    public static bool HasSupporterAccess => IsSignedIn;
+
+    public static void Load()
+    {
+        try
+        {
+            if (!File.Exists(SessionPath))
+                return;
+            using var document = JsonDocument.Parse(File.ReadAllText(SessionPath));
+            var root = document.RootElement;
+            _accessToken = root.TryGetProperty("accessToken", out var token) ? token.GetString() : null;
+            _login = root.TryGetProperty("login", out var login) ? login.GetString() : null;
+        }
+        catch
+        {
+            _accessToken = null;
+            _login = null;
+        }
+    }
+
+    internal static void Save(string accessToken, string login)
+    {
+        _accessToken = accessToken;
+        _login = login;
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(SessionPath)!);
+            // Note: stored as plain JSON. The app ships without a crypto package, so the
+            // token is readable by anything running as this user. Sign out clears it.
+            File.WriteAllText(SessionPath, JsonSerializer.Serialize(new AuthSessionFile
+            {
+                AccessToken = accessToken,
+                Login = login
+            }));
+        }
+        catch
+        {
+        }
+    }
+
+    public static void SignOut()
+    {
+        _accessToken = null;
+        _login = null;
+        try
+        {
+            if (File.Exists(SessionPath))
+                File.Delete(SessionPath);
+        }
+        catch
+        {
+        }
+
+        EnforceThemeAccess();
+    }
+
+    /// <summary>
+    /// Falls back to a free theme when the stored preference points at a locked theme
+    /// that the current visitor cannot use.
+    /// </summary>
+    public static void EnforceThemeAccess()
+    {
+        var stored = SettingsManager.Current.ThemeName;
+        var palette = Theme.Palettes.FirstOrDefault(item => item.Name.Equals(stored, StringComparison.OrdinalIgnoreCase));
+        if (palette is { Exclusive: true } && !HasSupporterAccess)
+        {
+            SettingsManager.Current.ThemeName = Theme.Palettes[0].Name;
+            SettingsManager.Save();
+        }
+    }
+
+    private sealed class AuthSessionFile
+    {
+        public string AccessToken { get; set; } = "";
+        public string Login { get; set; } = "";
+    }
+}
+
+internal sealed record GitHubSignInRequest(
+    string DeviceCode,
+    string UserCode,
+    string VerificationUri,
+    int IntervalSeconds,
+    int ExpiresInSeconds);
+
+/// <summary>
+/// GitHub OAuth device flow, the only flow a desktop app can run without shipping a
+/// client secret. The user gets a short code, approves it in a browser, and the app
+/// polls until the token arrives.
+/// </summary>
+internal static class GitHubDeviceSignIn
+{
+    // TODO: replace with the client id of your GitHub OAuth App
+    // (Settings -> Developer settings -> OAuth Apps -> New OAuth App), with
+    // "Enable device flow" turned on. Until then sign-in stays disabled in the UI.
+    public const string ClientId = "REPLACE_WITH_GITHUB_OAUTH_CLIENT_ID";
+
+    private const string DeviceCodeUrl = "https://github.com/login/device/code";
+    private const string AccessTokenUrl = "https://github.com/login/oauth/access_token";
+    private const string UserUrl = "https://api.github.com/user";
+    private const string Scope = "read:user";
+
+    private static readonly HttpClient Http = CreateHttpClient();
+
+    public static bool IsConfigured => !string.IsNullOrWhiteSpace(ClientId)
+        && !ClientId.StartsWith("REPLACE_", StringComparison.Ordinal);
+
+    private static HttpClient CreateHttpClient()
+    {
+        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("ATS-American-Roadtrip-Car-Patcher");
+        client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+        return client;
+    }
+
+    public static async Task<GitHubSignInRequest> RequestCodeAsync(CancellationToken cancellationToken)
+    {
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["client_id"] = ClientId,
+            ["scope"] = Scope
+        });
+        using var response = await Http.PostAsync(DeviceCodeUrl, content, cancellationToken).ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        using var document = JsonDocument.Parse(body);
+        var root = document.RootElement;
+
+        if (!root.TryGetProperty("device_code", out var deviceCode) || !root.TryGetProperty("user_code", out var userCode))
+            throw new InvalidOperationException(ReadError(root, "GitHub did not start the sign-in request."));
+
+        return new GitHubSignInRequest(
+            deviceCode.GetString() ?? "",
+            userCode.GetString() ?? "",
+            root.TryGetProperty("verification_uri", out var uri) && !string.IsNullOrWhiteSpace(uri.GetString())
+                ? uri.GetString()!
+                : "https://github.com/login/device",
+            Math.Max(5, root.TryGetProperty("interval", out var interval) ? interval.GetInt32() : 5),
+            root.TryGetProperty("expires_in", out var expires) ? expires.GetInt32() : 900);
+    }
+
+    public static async Task<string> WaitForTokenAsync(
+        GitHubSignInRequest request,
+        Action<string> onStatus,
+        CancellationToken cancellationToken)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(request.ExpiresInSeconds);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["client_id"] = ClientId,
+                ["device_code"] = request.DeviceCode,
+                ["grant_type"] = "urn:ietf:params:oauth:grant-type:device_code"
+            });
+            using var response = await Http.PostAsync(AccessTokenUrl, content, cancellationToken).ConfigureAwait(false);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+            var root = document.RootElement;
+
+            if (root.TryGetProperty("access_token", out var token) && !string.IsNullOrWhiteSpace(token.GetString()))
+                return token.GetString()!;
+
+            switch (root.TryGetProperty("error", out var error) ? error.GetString() : null)
+            {
+                case null:
+                    throw new InvalidOperationException(ReadError(root, "GitHub did not return a sign-in token."));
+                case "authorization_pending":
+                    onStatus("Waiting for you to approve the request in your browser...");
+                    break;
+                case "slow_down":
+                    onStatus("Still waiting for approval...");
+                    break;
+                case "expired_token":
+                    throw new TimeoutException("That sign-in code expired. Start again for a fresh code.");
+                case "access_denied":
+                    throw new InvalidOperationException("The sign-in request was denied.");
+                default:
+                    throw new InvalidOperationException(ReadError(root, "GitHub could not complete the sign-in request."));
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(request.IntervalSeconds), cancellationToken).ConfigureAwait(false);
+        }
+
+        throw new TimeoutException("The sign-in request timed out. Start again for a fresh code.");
+    }
+
+    public static async Task<string> ReadLoginAsync(string accessToken, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, UserUrl);
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+        using var response = await Http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"GitHub returned {(int)response.StatusCode} when reading your profile.");
+
+        using var document = JsonDocument.Parse(body);
+        return document.RootElement.TryGetProperty("login", out var login) && !string.IsNullOrWhiteSpace(login.GetString())
+            ? login.GetString()!
+            : "GitHub user";
+    }
+
+    public static void OpenVerificationPage(string url)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch
+        {
+        }
+    }
+
+    private static string ReadError(JsonElement root, string fallback)
+    {
+        if (root.TryGetProperty("error_description", out var description) && !string.IsNullOrWhiteSpace(description.GetString()))
+            return description.GetString()!;
+        if (root.TryGetProperty("error", out var error) && !string.IsNullOrWhiteSpace(error.GetString()))
+            return error.GetString()!;
+        return fallback;
+    }
+}
+
 internal static class Program
 {
     public const string AppName = "ATS American Roadtrip Car Patcher";
@@ -169,7 +410,15 @@ internal static class Program
     static void Main()
     {
         SettingsManager.Load();
+        AuthSession.Load();
+        AuthSession.EnforceThemeAccess();
         ApplicationConfiguration.Initialize();
+
+        // The sign-in window is optional by design: skipping it only leaves the
+        // supporter themes locked.
+        using (var signIn = new SignInForm())
+            Application.Run(signIn);
+
         Application.Run(new ConverterForm());
     }
 }
@@ -182,7 +431,8 @@ internal sealed record ThemePalette(
     Color Border,
     Color Text,
     Color Muted,
-    Color Accent);
+    Color Accent,
+    bool Exclusive = false);
 
 internal static class Theme
 {
@@ -197,11 +447,21 @@ internal static class Theme
         new ThemePalette("Lagoon", Color.FromArgb(9, 19, 21), Color.FromArgb(14, 29, 33), Color.FromArgb(20, 41, 46), Color.FromArgb(28, 57, 64), Color.FromArgb(224, 243, 243), Color.FromArgb(126, 165, 168), Color.FromArgb(45, 212, 191)),
         new ThemePalette("Aurora", Color.FromArgb(14, 12, 26), Color.FromArgb(23, 20, 40), Color.FromArgb(32, 28, 55), Color.FromArgb(45, 39, 74), Color.FromArgb(237, 234, 255), Color.FromArgb(154, 145, 190), Color.FromArgb(167, 139, 250)),
         new ThemePalette("Crimson", Color.FromArgb(21, 12, 14), Color.FromArgb(31, 18, 21), Color.FromArgb(43, 25, 29), Color.FromArgb(58, 34, 40), Color.FromArgb(248, 234, 236), Color.FromArgb(190, 150, 157), Color.FromArgb(255, 77, 109)),
-        new ThemePalette("Sandstone", Color.FromArgb(250, 246, 240), Color.FromArgb(255, 255, 255), Color.FromArgb(243, 236, 227), Color.FromArgb(226, 216, 203), Color.FromArgb(38, 31, 24), Color.FromArgb(126, 112, 95), Color.FromArgb(194, 112, 58))
+        new ThemePalette("Sandstone", Color.FromArgb(250, 246, 240), Color.FromArgb(255, 255, 255), Color.FromArgb(243, 236, 227), Color.FromArgb(226, 216, 203), Color.FromArgb(38, 31, 24), Color.FromArgb(126, 112, 95), Color.FromArgb(194, 112, 58)),
+        new ThemePalette("Obsidian", Color.FromArgb(10, 10, 12), Color.FromArgb(19, 19, 23), Color.FromArgb(28, 28, 34), Color.FromArgb(42, 42, 50), Color.FromArgb(242, 240, 234), Color.FromArgb(154, 151, 142), Color.FromArgb(227, 179, 65), true),
+        new ThemePalette("Vapor", Color.FromArgb(20, 11, 36), Color.FromArgb(29, 16, 51), Color.FromArgb(40, 26, 71), Color.FromArgb(59, 39, 102), Color.FromArgb(242, 234, 255), Color.FromArgb(168, 150, 201), Color.FromArgb(255, 79, 216), true)
     });
 
-    private static ThemePalette CurrentPalette =>
-        Palettes.FirstOrDefault(palette => palette.Name.Equals(SettingsManager.Current.ThemeName, StringComparison.OrdinalIgnoreCase)) ?? Palettes[0];
+    private static ThemePalette CurrentPalette
+    {
+        get
+        {
+            var palette = Palettes.FirstOrDefault(palette => palette.Name.Equals(SettingsManager.Current.ThemeName, StringComparison.OrdinalIgnoreCase)) ?? Palettes[0];
+            // Defence in depth: a locked theme can never paint, even if the stored
+            // preference somehow still points at one while signed out.
+            return palette.Exclusive && !AuthSession.HasSupporterAccess ? Palettes[0] : palette;
+        }
+    }
 
     public static Color Background => CurrentPalette.Background;
     public static Color Surface => CurrentPalette.Surface;
@@ -329,6 +589,12 @@ internal sealed class ThemeSwatch : Control
     public static readonly Size SwatchSize = new(88, 50);
     public static readonly int SwatchMargin = 3;
 
+    /// <summary>True while this palette is reserved and the visitor cannot use it yet.</summary>
+    public bool IsLocked => Palette.Exclusive && !AuthSession.HasSupporterAccess;
+
+    /// <summary>Raised instead of <see cref="Control.Click"/> when a locked swatch is used.</summary>
+    public event EventHandler? LockedClicked;
+
     public bool Selected
     {
         get => _selected;
@@ -365,6 +631,17 @@ internal sealed class ThemeSwatch : Control
         base.OnKeyDown(e);
     }
 
+    protected override void OnClick(EventArgs e)
+    {
+        if (IsLocked)
+        {
+            LockedClicked?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
+        base.OnClick(e);
+    }
+
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
@@ -393,8 +670,30 @@ internal sealed class ThemeSwatch : Control
         TextRenderer.DrawText(g, Palette.Name, Font, new Rectangle(8, 25, Width - 16, 20), Palette.Text,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
+        if (IsLocked)
+            PaintLocked(g, cardPath);
+
         using var border = new Pen(_selected ? Palette.Accent : Theme.Border, _selected ? 2f : 1f);
         g.DrawPath(border, cardPath);
+    }
+
+    // A reserved palette stays visible so people know it exists, but it is dimmed back
+    // towards the page background and stamped with a padlock.
+    private void PaintLocked(Graphics g, GraphicsPath cardPath)
+    {
+        using (var veil = new SolidBrush(Color.FromArgb(168, Theme.Background)))
+            g.FillPath(veil, cardPath);
+
+        var nameRect = new Rectangle(8, 25, Width - 30, 20);
+        TextRenderer.DrawText(g, Palette.Name, Font, nameRect, Theme.Muted,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+
+        var lockLeft = Width - 19f;
+        var lockTop = 31f;
+        using (var shackle = new Pen(Theme.Muted, 1.6f))
+            g.DrawArc(shackle, lockLeft + 1.6f, lockTop - 4.5f, 6.8f, 6.8f, 180f, 180f);
+        using (var body = new SolidBrush(Theme.Muted))
+            g.FillRectangle(body, lockLeft, lockTop, 10f, 8f);
     }
 }
 
@@ -748,6 +1047,280 @@ internal sealed class Badge : Control
     }
 }
 
+/// <summary>
+/// Startup sign-in window. It never blocks the app: skipping simply leaves the
+/// supporter themes locked, and the window can be reopened from Settings.
+/// </summary>
+internal sealed class SignInForm : Form
+{
+    private readonly FlatButton _primaryButton = new();
+    private readonly FlatButton _secondaryButton = new();
+    private readonly Label _statusTitle = new();
+    private readonly Label _statusDetail = new();
+    private readonly Panel _codeCard = new();
+    private readonly Label _codeLabel = new();
+    private CancellationTokenSource? _signIn;
+    private bool _busy;
+
+    public SignInForm()
+    {
+        Text = $"Sign in - {Program.AppName}";
+        BackColor = Theme.Background;
+        ForeColor = Theme.Text;
+        Font = Theme.UiFont(9.5f);
+        ClientSize = new Size(600, 470);
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        MaximizeBox = false;
+        MinimizeBox = false;
+        ShowInTaskbar = false;
+        StartPosition = FormStartPosition.CenterScreen;
+        DoubleBuffered = true;
+        KeyPreview = true;
+        using (var icon = ConverterForm.LoadResource("app.ico"))
+        {
+            if (icon != null)
+                Icon = new Icon(icon);
+        }
+
+        BuildUi();
+        if (AuthSession.IsSignedIn)
+            ShowSignedInState();
+        else
+            ShowSignedOutState();
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        ConverterForm.ApplyDarkTitleBar(this);
+    }
+
+    private void BuildUi()
+    {
+        const int pad = 32;
+        const int width = 600 - pad * 2;
+
+        Controls.Add(new Label
+        {
+            Text = "Unlock the supporter themes",
+            Font = Theme.UiFont(16f, FontStyle.Bold),
+            ForeColor = Theme.Text,
+            AutoSize = true,
+            Location = new Point(pad, 28)
+        });
+        Controls.Add(new Label
+        {
+            Text = "Obsidian and Vapor are reserved for supporters. Sign in with GitHub to use them, "
+                + "or continue without an account and keep every free theme.",
+            Font = Theme.UiFont(9f),
+            ForeColor = Theme.Muted,
+            AutoSize = false,
+            Size = new Size(width, 44),
+            Location = new Point(pad, 62)
+        });
+
+        _statusTitle.Font = Theme.UiFont(10f, FontStyle.Bold);
+        _statusTitle.ForeColor = Theme.Text;
+        _statusTitle.AutoSize = true;
+        _statusTitle.Location = new Point(pad, 124);
+        Controls.Add(_statusTitle);
+
+        _statusDetail.Font = Theme.UiFont(8.75f);
+        _statusDetail.ForeColor = Theme.Muted;
+        _statusDetail.AutoSize = false;
+        _statusDetail.Size = new Size(width, 34);
+        _statusDetail.Location = new Point(pad, 146);
+        Controls.Add(_statusDetail);
+
+        _codeCard.Size = new Size(width, 96);
+        _codeCard.Location = new Point(pad, 190);
+        _codeCard.BackColor = Theme.Surface;
+        _codeCard.Visible = false;
+        Controls.Add(_codeCard);
+
+        _codeCard.Controls.Add(new Label
+        {
+            Text = "Enter this code at github.com/login/device",
+            Font = Theme.UiFont(8.75f),
+            ForeColor = Theme.Muted,
+            AutoSize = true,
+            Location = new Point(18, 14)
+        });
+        _codeLabel.Font = Theme.MonoFont(20f);
+        _codeLabel.ForeColor = Theme.Text;
+        _codeLabel.AutoSize = true;
+        _codeLabel.Location = new Point(18, 40);
+        _codeCard.Controls.Add(_codeLabel);
+
+        var openPageButton = new FlatButton
+        {
+            Text = "Open GitHub",
+            Size = new Size(140, 32),
+            Location = new Point(width - 158, 32)
+        };
+        openPageButton.Click += (_, _) =>
+        {
+            if (_codeLabel.Tag is string url)
+                GitHubDeviceSignIn.OpenVerificationPage(url);
+        };
+        _codeCard.Controls.Add(openPageButton);
+
+        Controls.Add(new Label
+        {
+            Text = "Sign-in only reads your public GitHub profile. Nothing is posted, and the app never stores your password.",
+            Font = Theme.UiFont(8.75f),
+            ForeColor = Theme.Muted,
+            AutoSize = false,
+            Size = new Size(width, 34),
+            Location = new Point(pad, 306)
+        });
+
+        _primaryButton.Size = new Size(210, 38);
+        _primaryButton.Location = new Point(pad, 372);
+        _primaryButton.Primary = true;
+        _primaryButton.Click += async (_, _) => await OnPrimaryAsync();
+        Controls.Add(_primaryButton);
+
+        _secondaryButton.Size = new Size(210, 38);
+        _secondaryButton.Location = new Point(600 - pad - 210, 372);
+        _secondaryButton.Click += (_, _) => OnSecondary();
+        Controls.Add(_secondaryButton);
+
+        KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Escape)
+            {
+                OnSecondary();
+                e.Handled = true;
+            }
+        };
+        FormClosing += (_, _) => _signIn?.Cancel();
+    }
+
+    private void ShowSignedInState()
+    {
+        SetStatus($"Signed in as {AuthSession.Login}", "The supporter themes are unlocked on this device.");
+        _codeCard.Visible = false;
+        _primaryButton.Text = "Continue";
+        _primaryButton.Enabled = true;
+        _secondaryButton.Text = "Sign out";
+        _secondaryButton.Visible = true;
+    }
+
+    private void ShowSignedOutState()
+    {
+        SetStatus(
+            "Not signed in",
+            GitHubDeviceSignIn.IsConfigured
+                ? "The two supporter themes stay locked until you sign in."
+                : "Sign-in is not configured in this build yet, so the supporter themes stay locked.");
+        _codeCard.Visible = false;
+        _primaryButton.Text = "Sign in with GitHub";
+        _primaryButton.Enabled = GitHubDeviceSignIn.IsConfigured;
+        _secondaryButton.Text = "Continue without account";
+        _secondaryButton.Visible = true;
+    }
+
+    private void SetStatus(string title, string detail)
+    {
+        _statusTitle.Text = title;
+        _statusDetail.Text = detail;
+    }
+
+    private void OnSecondary()
+    {
+        if (_busy)
+        {
+            _signIn?.Cancel();
+            return;
+        }
+
+        if (AuthSession.IsSignedIn)
+        {
+            AuthSession.SignOut();
+            ShowSignedOutState();
+            return;
+        }
+
+        DialogResult = DialogResult.OK;
+        Close();
+    }
+
+    private async Task OnPrimaryAsync()
+    {
+        if (_busy)
+            return;
+
+        if (AuthSession.IsSignedIn)
+        {
+            DialogResult = DialogResult.OK;
+            Close();
+            return;
+        }
+
+        if (!GitHubDeviceSignIn.IsConfigured)
+            return;
+
+        _busy = true;
+        _signIn = new CancellationTokenSource();
+        var token = _signIn.Token;
+        _primaryButton.Enabled = false;
+        _secondaryButton.Text = "Cancel";
+        _secondaryButton.Visible = true;
+        try
+        {
+            SetStatus("Contacting GitHub", "Requesting a one-time sign-in code...");
+            var request = await GitHubDeviceSignIn.RequestCodeAsync(token).ConfigureAwait(true);
+            if (IsDisposed)
+                return;
+
+            _codeLabel.Text = request.UserCode;
+            _codeLabel.Tag = request.VerificationUri;
+            _codeCard.Visible = true;
+            SetStatus("Waiting for GitHub", "Approve the request in your browser to continue.");
+            GitHubDeviceSignIn.OpenVerificationPage(request.VerificationUri);
+
+            var accessToken = await GitHubDeviceSignIn.WaitForTokenAsync(
+                request,
+                message => SetStatus("Waiting for GitHub", message),
+                token).ConfigureAwait(true);
+            if (IsDisposed)
+                return;
+
+            SetStatus("Finishing up", "Reading your GitHub profile...");
+            var login = await GitHubDeviceSignIn.ReadLoginAsync(accessToken, token).ConfigureAwait(true);
+            if (IsDisposed)
+                return;
+
+            AuthSession.Save(accessToken, login);
+            SetStatus($"Signed in as {login}", "The supporter themes are unlocked on this device.");
+            await Task.Delay(700).ConfigureAwait(true);
+            if (!IsDisposed)
+            {
+                DialogResult = DialogResult.OK;
+                Close();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            ShowSignedOutState();
+        }
+        catch (Exception ex)
+        {
+            SetStatus("Sign-in failed", ex.Message);
+            _codeCard.Visible = false;
+            _primaryButton.Enabled = GitHubDeviceSignIn.IsConfigured;
+            _secondaryButton.Text = "Continue without account";
+        }
+        finally
+        {
+            _busy = false;
+            _signIn?.Dispose();
+            _signIn = null;
+        }
+    }
+}
+
 public sealed class ConverterForm : Form
 {
     private const int Margin_ = 24;
@@ -888,11 +1461,16 @@ public sealed class ConverterForm : Form
 
     private void TryEnableDarkTitleBar()
     {
+        ApplyDarkTitleBar(this);
+    }
+
+    internal static void ApplyDarkTitleBar(IWin32Window window)
+    {
         try
         {
             var enabled = Theme.IsLightBackground ? 0 : 1;
-            if (DwmSetWindowAttribute(Handle, 20, ref enabled, sizeof(int)) != 0)
-                DwmSetWindowAttribute(Handle, 19, ref enabled, sizeof(int));
+            if (DwmSetWindowAttribute(window.Handle, 20, ref enabled, sizeof(int)) != 0)
+                DwmSetWindowAttribute(window.Handle, 19, ref enabled, sizeof(int));
         }
         catch (DllNotFoundException)
         {
@@ -902,7 +1480,7 @@ public sealed class ConverterForm : Form
         }
     }
 
-    private static Stream? LoadResource(string name) =>
+    internal static Stream? LoadResource(string name) =>
         typeof(ConverterForm).Assembly.GetManifestResourceStream(name);
 
     private static TextBox CreateField(bool readOnly) => new()
@@ -1753,7 +2331,39 @@ public sealed class ConverterForm : Form
                 y += 86;
             }
 
-            switch (category)
+            // Re-opens the sign-in window from inside Settings and repaints everything that
+        // depends on the account state.
+        void PromptSignIn()
+        {
+            using var signIn = new SignInForm();
+            signIn.ShowDialog(settingsPage);
+            ApplyAccountChange();
+        }
+
+        // Signing in or out can unlock/relock themes, so the staged theme and accent are
+        // resynced with the stored settings and the page is rebuilt.
+        void ApplyAccountChange()
+        {
+            var previousAccent = Theme.Accent;
+            var staged = Theme.Palettes.FirstOrDefault(palette => palette.Name.Equals(selectedTheme, StringComparison.OrdinalIgnoreCase));
+            if (staged is { Exclusive: true } && !AuthSession.HasSupporterAccess)
+            {
+                selectedTheme = Theme.Palettes[0].Name;
+                settings.ThemeName = selectedTheme;
+                var presetAccent = Theme.PresetAccent(selectedTheme);
+                accentColor = $"#{presetAccent.R:X2}{presetAccent.G:X2}{presetAccent.B:X2}";
+                settings.AccentColor = accentColor;
+                if (accentInput != null)
+                    accentInput.Text = accentColor;
+            }
+
+            ApplySettingsAppearance(this, 1f, previousAccent);
+            ApplySettingsAppearance(settingsPage, 1f, previousAccent);
+            TryEnableDarkTitleBar();
+            UpdateContent(selectedCategory);
+        }
+
+        switch (category)
             {
                 case "General":
                     var dealerIdInput = new TextBox
@@ -1823,7 +2433,9 @@ public sealed class ConverterForm : Form
                     });
                     contentScroll.Controls.Add(new Label
                     {
-                        Text = "Choose a coordinated palette for the app.",
+                        Text = AuthSession.HasSupporterAccess
+                            ? "Choose a coordinated palette for the app. Supporter themes are unlocked."
+                            : "Choose a coordinated palette for the app. Two supporter themes are locked until you sign in.",
                         Font = Theme.UiFont(8.75f),
                         ForeColor = Theme.Muted,
                         AutoSize = true,
@@ -1845,6 +2457,18 @@ public sealed class ConverterForm : Form
                         var swatch = new ThemeSwatch(palette)
                         {
                             Selected = palette.Name.Equals(selectedTheme, StringComparison.OrdinalIgnoreCase)
+                        };
+                        swatch.LockedClicked += (_, _) =>
+                        {
+                            if (MessageBox.Show(
+                                    settingsPage,
+                                    $"{palette.Name} is a supporter theme. Sign in with GitHub to unlock it?",
+                                    "Supporter theme",
+                                    MessageBoxButtons.YesNo,
+                                    MessageBoxIcon.Information) == DialogResult.Yes)
+                            {
+                                PromptSignIn();
+                            }
                         };
                         swatch.Click += (_, _) =>
                         {
@@ -1974,6 +2598,51 @@ public sealed class ConverterForm : Form
                         PreviewFontSettings();
                     };
                     AddField("Font Size", "Base interface text size", fontSizeInput);
+
+                    contentScroll.Controls.Add(new Label
+                    {
+                        Text = "Account",
+                        Font = Theme.UiFont(10f, FontStyle.Bold),
+                        ForeColor = Theme.Text,
+                        AutoSize = true,
+                        Location = new Point(0, y)
+                    });
+                    contentScroll.Controls.Add(new Label
+                    {
+                        Text = AuthSession.IsSignedIn
+                            ? $"Signed in as {AuthSession.Login}. Supporter themes are unlocked on this device."
+                            : "Not signed in. Sign in with GitHub to unlock the supporter themes.",
+                        Font = Theme.UiFont(8.75f),
+                        ForeColor = Theme.Muted,
+                        AutoSize = true,
+                        Location = new Point(0, y + 22)
+                    });
+
+                    var accountRow = new Panel { Size = new Size(fieldWidth, 34), BackColor = Color.Transparent, Location = new Point(0, y + 44) };
+                    var accountSignInButton = new FlatButton
+                    {
+                        Text = "Sign in with GitHub",
+                        Size = new Size(190, 34),
+                        Location = new Point(0, 0),
+                        Visible = !AuthSession.IsSignedIn
+                    };
+                    var accountSignOutButton = new FlatButton
+                    {
+                        Text = "Sign out",
+                        Size = new Size(100, 34),
+                        Location = new Point(200, 0),
+                        Visible = AuthSession.IsSignedIn
+                    };
+                    accountSignInButton.Click += (_, _) => PromptSignIn();
+                    accountSignOutButton.Click += (_, _) =>
+                    {
+                        AuthSession.SignOut();
+                        ApplyAccountChange();
+                    };
+                    accountRow.Controls.Add(accountSignInButton);
+                    accountRow.Controls.Add(accountSignOutButton);
+                    contentScroll.Controls.Add(accountRow);
+                    y += 86;
                     break;
 
                 case "Advanced":
