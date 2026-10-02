@@ -79,7 +79,7 @@ static int Usage(string? error)
         Usage:
           ats-roadtrip-convert --input <mod.scs> --output <folder> [--dealer <id>] [--reference <mod.scs>]
                                [--no-move-assets] [--no-dealer] [--patch-only]
-                               [--vehicle-type pickup|suv|sedan|muscle|sport|offroad|veteran]
+                               [--vehicle-type sedan|hatchback|pickup|van]
           ats-roadtrip-convert --extract <archive.scs> --output <folder> [--defs-only]
         """);
     return error == null ? 0 : 1;

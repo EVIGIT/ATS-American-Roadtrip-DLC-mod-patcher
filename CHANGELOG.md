@@ -1,24 +1,40 @@
 # ATS American Roadtrip Car Patcher
 
-Current App Version: v1.2
+Current App Version: v1.3
 
 ## Unreleased
 
 ### Added
-- Added authenticated GitHub changelog and release updates through GitHub CLI.
-- Added a tag-triggered GitHub Actions workflow that builds and publishes the Windows update package.
-- Added a VS Code watch-and-run task for faster development updates.
-- Added a manual local-build updater to Advanced Settings.
+
+### Fixed
+
+### Changed
+
+## v1.3
+
+### Added
+- Added authenticated GitHub changelog and release checks through GitHub CLI.
+- Added a tag-triggered GitHub Actions workflow that builds and publishes the Windows updater package.
+- Added five coordinated app themes with live preview and saved selection.
+- Added a VS Code watch-and-run task for faster local development updates.
 - Added a Windows updater smoke test using temporary install/build folders.
 - Added an in-window changelog page with navigation back to the converter.
 - Added an in-window settings page with navigation back to the converter.
 
 ### Fixed
-- Added a visible Back action to the Settings header.
+- Fixed the Settings header Back action being hidden.
+- Fixed custom button corners rendering black on transparent surfaces.
+- Fixed the main form's vehicle type selection text not appearing.
+- Fixed the Changelog and Settings header labels being truncated.
+- Fixed button slivers that disappeared only after hovering.
+- Fixed settings content overlapping the category sidebar.
+- Fixed custom accent color changes not previewing across the app.
 
 ### Changed
-- Added more top spacing to changelog release sections.
-- Cleaned up conversion option switches and wrapped their descriptions.
+- Replaced the Light mode toggle with a saved theme preference.
+- Increased spacing between changelog release sections for easier reading.
+- Polished conversion option switches and wrapped their descriptions to prevent truncation.
+- Kept settings and customization updates aligned with the app-wide theme and surface styling.
 
 ## v1.2
 

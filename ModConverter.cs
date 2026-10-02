@@ -16,7 +16,7 @@ public sealed record ConversionSettings(
     string VehicleType = "pickup")
 {
     public static readonly string[] VehicleTypes =
-        { "pickup", "suv", "sedan", "muscle", "sport", "offroad", "veteran" };
+        { "sedan", "hatchback", "pickup", "van" };
 }
 
 public sealed record VehicleInfo(string Id, string Directory, string DataFile);
