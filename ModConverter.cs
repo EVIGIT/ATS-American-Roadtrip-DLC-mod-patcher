@@ -4,6 +4,96 @@ using System.Text.RegularExpressions;
 
 namespace ATSRoadTripConverter;
 
+/// <summary>Summary of the encrypted content found inside a mod.</summary>
+public sealed record EncryptedModReport(int FileCount, IReadOnlyList<string> Samples)
+{
+    public static readonly EncryptedModReport None = new(0, Array.Empty<string>());
+    public bool HasEncryptedFiles => FileCount > 0;
+}
+
+/// <summary>
+/// Detects encrypted definition files so a mod that cannot be converted explains why
+/// up front, instead of failing later with a confusing parse or binary-file error.
+/// </summary>
+public static class EncryptedModScanner
+{
+    // SCS marks protected definition files with this tag; the payload behind it is not
+    // readable, so the file has to be reported rather than converted.
+    private static readonly byte[] Marker = Encoding.ASCII.GetBytes("<Encrypted/>");
+    private const int SniffBytes = 8192;
+    private const int MaxSamples = 5;
+
+    public static EncryptedModReport Scan(string root)
+    {
+        if (!Directory.Exists(root))
+            return EncryptedModReport.None;
+
+        var count = 0;
+        var samples = new List<string>();
+
+        IEnumerable<string> files;
+        try
+        {
+            files = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories);
+        }
+        catch
+        {
+            return EncryptedModReport.None;
+        }
+
+        foreach (var file in files)
+        {
+            if (!LooksEncrypted(file))
+                continue;
+
+            count++;
+            if (samples.Count < MaxSamples)
+            {
+                try
+                {
+                    samples.Add(Path.GetRelativePath(root, file));
+                }
+                catch
+                {
+                    samples.Add(file);
+                }
+            }
+        }
+
+        return count == 0 ? EncryptedModReport.None : new EncryptedModReport(count, samples);
+    }
+
+    private static bool LooksEncrypted(string path)
+    {
+        try
+        {
+            using var stream = File.OpenRead(path);
+            var length = (int)Math.Min(SniffBytes, Math.Max(stream.Length, 1));
+            var buffer = new byte[length];
+            var read = stream.Read(buffer, 0, length);
+            return Contains(buffer.AsSpan(0, read), Marker);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool Contains(ReadOnlySpan<byte> haystack, ReadOnlySpan<byte> needle)
+    {
+        if (needle.Length == 0 || haystack.Length < needle.Length)
+            return false;
+
+        for (var offset = 0; offset <= haystack.Length - needle.Length; offset++)
+        {
+            if (haystack.Slice(offset, needle.Length).SequenceEqual(needle))
+                return true;
+        }
+
+        return false;
+    }
+}
+
 public sealed record ConversionSettings(
     string InputFile,
     string OutputDirectory,
@@ -62,6 +152,15 @@ public static class ModConverter
 
             var root = FindModRoot(work);
             log($"[INFO] Mod root: {root}");
+
+            // Encrypted content cannot be read or converted. Report it clearly here
+            // instead of letting it surface as a confusing parse error much later.
+            var encryptedFiles = EncryptedModScanner.Scan(root);
+            if (encryptedFiles.HasEncryptedFiles)
+            {
+                log($"[WARNING] {encryptedFiles.FileCount} file(s) in this mod are encrypted and cannot be converted.");
+                log("          Encrypted files (first few): " + string.Join(", ", encryptedFiles.Samples));
+            }
 
             string? referenceRoot = null;
             if (!string.IsNullOrWhiteSpace(settings.ReferenceFile))
@@ -169,6 +268,12 @@ public static class ModConverter
 
             log("-> Validating converted structure...");
             var issues = Validate(root, carDef, dealerId, moveAssets, log, settings.PatchOnly);
+            if (encryptedFiles.HasEncryptedFiles)
+            {
+                issues.Insert(0,
+                    $"{encryptedFiles.FileCount} file(s) in this mod are encrypted (for example {encryptedFiles.Samples[0]}). " +
+                    "Encrypted content cannot be read or converted, so those files were skipped.");
+            }
             if (stats.BinaryDefinitionsSkipped > 0)
             {
                 var issue = $"{stats.BinaryDefinitionsSkipped} definition file(s) are binary/encrypted by the mod author and could not be converted; the car will not work until plain-text versions are supplied.";

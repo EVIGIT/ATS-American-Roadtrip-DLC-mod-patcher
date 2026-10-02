@@ -1,10 +1,19 @@
 # ATS American Roadtrip Car Patcher
 
-Current App Version: v1.3.3
+Current App Version: v1.3.4
 
 ## Unreleased
 
 ### Added
+
+### Fixed
+
+### Changed
+
+## v1.3.4
+
+### Added
+- Conversion now detects encrypted mod files up front and reports how many were found (with examples) instead of failing later with a confusing parse error. Encrypted content cannot be read or converted and is skipped.
 
 ### Fixed
 - "Install latest GitHub release" no longer fails with a "release not found" error. The latest tag is now read from the GitHub REST API because `gh release view latest` reports the wrong result on some setups, even when a published release exists.
