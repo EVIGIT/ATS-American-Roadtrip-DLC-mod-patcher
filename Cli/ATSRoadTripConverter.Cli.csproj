@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>ats-roadtrip-convert</AssemblyName>
+    <RootNamespace>ATSRoadTripConverter.Cli</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\ModConverter.cs" Link="ModConverter.cs" />
+    <Compile Include="..\ScsArchive.cs" Link="ScsArchive.cs" />
+    <Compile Include="..\HashFsArchive.cs" Link="HashFsArchive.cs" />
+    <Compile Include="..\CityHash.cs" Link="CityHash.cs" />
+  </ItemGroup>
+</Project>
