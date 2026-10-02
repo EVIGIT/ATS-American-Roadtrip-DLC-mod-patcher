@@ -428,7 +428,7 @@ internal static class GitHubDeviceSignIn
     /// </summary>
     public const string ClientIdEnvironmentVariable = "ATS_GITHUB_OAUTH_CLIENT_ID";
 
-    private const string FallbackClientId = "REPLACE_WITH_GITHUB_OAUTH_CLIENT_ID";
+    private const string FallbackClientId = "Ov23liUpEYawjNtIO7UC";
 
     public static string ClientId
     {
