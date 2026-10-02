@@ -63,6 +63,28 @@ public static class EncryptedModScanner
         return count == 0 ? EncryptedModReport.None : new EncryptedModReport(count, samples);
     }
 
+    /// <summary>Checks a single archive entry, used by the pre-flight input check.</summary>
+    public static bool EntryLooksEncrypted(System.IO.Compression.ZipArchiveEntry entry)
+    {
+        try
+        {
+            if (entry.Length <= 0 || entry.Length > 64 * 1024 * 1024)
+                return false;
+
+            using var stream = entry.Open();
+            var length = (int)Math.Min(SniffBytes, Math.Max(stream.Length, 1));
+            var buffer = new byte[length];
+            var read = stream.Read(buffer, 0, length);
+            return Contains(buffer.AsSpan(0, read), Marker);
+        }
+        catch
+        {
+            // A protected entry throws when opened, which is itself a strong hint, but it
+            // is not reported as encrypted here so a permissions error is not mislabelled.
+            return false;
+        }
+    }
+
     private static bool LooksEncrypted(string path)
     {
         try

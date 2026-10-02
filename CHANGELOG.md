@@ -1,6 +1,6 @@
 # ATS American Roadtrip Car Patcher
 
-Current App Version: v1.3.4
+Current App Version: v1.3.5
 
 ## Unreleased
 
@@ -9,6 +9,20 @@ Current App Version: v1.3.4
 ### Fixed
 
 ### Changed
+
+## v1.3.5
+
+### Added
+- General: "Remember window size and position", "Check the selected mod before converting", and "Check for updates automatically" (which records when it last ran and reports a newer release in the log).
+- Advanced: "Open the output folder when a conversion finishes", a "Maximum log lines" cap, and a "Reset all settings" button behind a confirmation.
+- A "Copy log" button beside "Clear" in the conversion log card.
+- The pre-flight check reports a password-protected or corrupted archive, an input that is not an ATS mod, and how many files inside are encrypted.
+
+### Fixed
+- The conversion log is now capped at the configured maximum so a very verbose run cannot grow the control without limit.
+
+### Changed
+- "Reset all settings" only resets preferences; sign-in state lives in a separate file and is never touched, so resetting cannot change what is unlocked.
 
 ## v1.3.4
 

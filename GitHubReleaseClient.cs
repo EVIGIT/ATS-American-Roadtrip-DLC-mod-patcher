@@ -45,7 +45,7 @@ internal static class GitHubReleaseClient
             ".tag_name").Trim();
     }
 
-    private static string? TryGetLatestReleaseTag()
+    internal static string? TryGetLatestReleaseTag()
     {
         try
         {

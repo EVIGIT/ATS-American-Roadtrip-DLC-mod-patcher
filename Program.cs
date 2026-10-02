@@ -32,6 +32,23 @@ public sealed class AppSettings
     public bool VerboseLogging { get; set; } = false;
     public bool BackupOriginal { get; set; } = false;
 
+    // Window layout
+    public bool RememberWindowLayout { get; set; } = true;
+    public int WindowLeft { get; set; } = -1;
+    public int WindowTop { get; set; } = -1;
+    public int WindowWidth { get; set; } = 0;
+    public int WindowHeight { get; set; } = 0;
+    public bool WindowMaximized { get; set; } = false;
+
+    // Conversion behaviour
+    public bool ValidateInputBeforeConverting { get; set; } = true;
+    public bool OpenOutputFolderAfterConversion { get; set; } = false;
+    public int MaxLogLines { get; set; } = 2000;
+
+    // Updates
+    public bool CheckForUpdatesAutomatically { get; set; } = true;
+    public string LastUpdateCheckUtc { get; set; } = "";
+
     // Theme settings
     public string ThemeMode { get; set; } = "Dark"; // Legacy preference migrated to ThemeName.
     public string ThemeName { get; set; } = "";
@@ -76,6 +93,17 @@ public static class SettingsManager
 
         // Ensure built-in vehicle types exist
         EnsureBuiltInVehicleTypes();
+    }
+
+    /// <summary>
+    /// Restores every preference to its default. Sign-in state lives in a separate file
+    /// and is deliberately untouched, so resetting can never change what is unlocked.
+    /// </summary>
+    public static void Reset()
+    {
+        Current = new AppSettings();
+        Save();
+        AuthSession.EnforceThemeAccess();
     }
 
     public static void Save()
@@ -617,7 +645,7 @@ internal static class GitHubDeviceSignIn
 internal static class Program
 {
     public const string AppName = "ATS American Roadtrip Car Patcher";
-    public const string AppVersion = "v1.3.4";
+    public const string AppVersion = "v1.3.5";
 
     [STAThread]
     static void Main()
@@ -1893,6 +1921,7 @@ public sealed class ConverterForm : Form
     };
 
     private readonly FlatButton _clearLog = new() { Text = "Clear" };
+    private readonly FlatButton _copyLog = new() { Text = "Copy log" };
 
     private readonly SlimProgress _progress = new();
 
@@ -1935,6 +1964,7 @@ public sealed class ConverterForm : Form
         y = BuildOptionsCard(y);
         y = BuildActionArea(y);
         BuildLogCard(y);
+        RestoreWindowLayout();
 
         _dealerId.Text = SettingsManager.Current.DefaultDealerId;
         _outputFolder.Text = SettingsManager.Current.DefaultOutputFolder;
@@ -1944,6 +1974,7 @@ public sealed class ConverterForm : Form
         _convert.Click += async (_, _) => await ConvertAsync();
         _openOutput.Click += (_, _) => OpenOutputFolder();
         _clearLog.Click += (_, _) => _log.Clear();
+        _copyLog.Click += (_, _) => CopyLogToClipboard();
         DragEnter += OnDragEnter;
         DragDrop += OnDragDrop;
 
@@ -1952,6 +1983,7 @@ public sealed class ConverterForm : Form
         UpdateOutputPreview();
         Write($"[INFO] {Program.AppName} {Program.AppVersion}");
         Write("[INFO] Drag an ATS mod (.scs/.zip) onto this window or click Browse to begin.");
+        _ = MaybeCheckForUpdatesAsync();
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -1975,6 +2007,65 @@ public sealed class ConverterForm : Form
             Icon = icon;
         if (_logoBox != null && ThemedIcon.Logo() is { } logo)
             _logoBox.Image = logo;
+    }
+
+    /// <summary>Restores the saved window position and size when the preference is on.</summary>
+    private void RestoreWindowLayout()
+    {
+        var settings = SettingsManager.Current;
+        if (!settings.RememberWindowLayout)
+            return;
+
+        var saved = IsRectOnScreen(settings.WindowLeft, settings.WindowTop, settings.WindowWidth, settings.WindowHeight);
+        if (saved)
+        {
+            StartPosition = FormStartPosition.Manual;
+            Bounds = new Rectangle(settings.WindowLeft, settings.WindowTop, settings.WindowWidth, settings.WindowHeight);
+        }
+
+        if (settings.WindowMaximized)
+            WindowState = FormWindowState.Maximized;
+
+        FormClosing += (_, _) => SaveWindowLayout();
+    }
+
+    private void SaveWindowLayout()
+    {
+        var settings = SettingsManager.Current;
+        if (!settings.RememberWindowLayout)
+            return;
+
+        try
+        {
+            var bounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+            settings.WindowMaximized = WindowState == FormWindowState.Maximized;
+            settings.WindowLeft = bounds.Left;
+            settings.WindowTop = bounds.Top;
+            settings.WindowWidth = bounds.Width;
+            settings.WindowHeight = bounds.Height;
+            SettingsManager.Save();
+        }
+        catch
+        {
+            // A failed layout save must never stop the app from closing.
+        }
+    }
+
+    /// <summary>Rejects a saved rectangle that would land off-screen after a monitor change.</summary>
+    private static bool IsRectOnScreen(int left, int top, int width, int height)
+    {
+        if (width <= 0 || height <= 0 || left == -1 || top == -1)
+            return false;
+
+        try
+        {
+            var working = Screen.FromRectangle(new Rectangle(left, top, width, height)).WorkingArea;
+            return working.IntersectsWith(new Rectangle(left, top, width, height));
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     internal static void ApplyDarkTitleBar(IWin32Window window)
@@ -2165,6 +2256,11 @@ public sealed class ConverterForm : Form
         _clearLog.Size = new Size(70, 28);
         _clearLog.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         card.Controls.Add(_clearLog);
+
+        _copyLog.Location = new Point(ContentWidth - 18 - 70 - 10 - 90, 10);
+        _copyLog.Size = new Size(90, 28);
+        _copyLog.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        card.Controls.Add(_copyLog);
 
         _log.Location = new Point(18, 48);
         _log.Size = new Size(ContentWidth - 36, height - 66);
@@ -2438,6 +2534,9 @@ public sealed class ConverterForm : Form
             return;
         }
 
+        if (SettingsManager.Current.ValidateInputBeforeConverting && !ValidateInputMod(_input.Text))
+            return;
+
         _convert.Enabled = false;
         _convert.Text = "PATCHING...";
         _progress.Value = 0;
@@ -2488,6 +2587,9 @@ public sealed class ConverterForm : Form
             _progress.Value = 100;
             if (File.Exists(result.OutputFile))
                 _openOutput.Enabled = true;
+
+            if (SettingsManager.Current.OpenOutputFolderAfterConversion && File.Exists(result.OutputFile))
+                OpenOutputFolder();
 
             if (SettingsManager.Current.AutoSaveSettings)
             {
@@ -2557,12 +2659,83 @@ public sealed class ConverterForm : Form
             return;
         }
 
+        TrimLogToLimit();
+
         _log.SelectionStart = _log.TextLength;
         _log.SelectionLength = 0;
         _log.SelectionColor = ColorFor(line);
         _log.AppendText(line + Environment.NewLine);
         _log.SelectionColor = _log.ForeColor;
         _log.ScrollToCaret();
+    }
+
+    /// <summary>
+    /// Keeps the log bounded so a long, verbose conversion cannot grow the control
+    /// without limit. The oldest lines are dropped first.
+    /// </summary>
+    private void TrimLogToLimit()
+    {
+        var limit = Math.Clamp(SettingsManager.Current.MaxLogLines, 200, 100_000);
+        if (_log.Lines.Length <= limit)
+            return;
+
+        var text = string.Join(Environment.NewLine, _log.Lines.Skip(_log.Lines.Length - limit));
+        _log.Lines = text.Split(Environment.NewLine);
+    }
+
+    private void CopyLogToClipboard()
+    {
+        try
+        {
+            if (_log.TextLength == 0)
+            {
+                Write("[INFO] There is no log to copy yet.");
+                return;
+            }
+
+            Clipboard.SetText(_log.Text);
+            Write("[INFO] Conversion log copied to the clipboard.");
+        }
+        catch (Exception ex)
+        {
+            Write($"[WARNING] Could not copy the log: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Quietly records that an update check ran, at most once a day, when the
+    /// preference is enabled. Never blocks or fails the app.
+    /// </summary>
+    private async Task MaybeCheckForUpdatesAsync()
+    {
+        var settings = SettingsManager.Current;
+        if (!settings.CheckForUpdatesAutomatically)
+            return;
+
+        try
+        {
+            if (DateTime.TryParse(settings.LastUpdateCheckUtc, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var last)
+                && (DateTime.UtcNow - last).TotalHours < 24)
+            {
+                return;
+            }
+
+            var tag = await Task.Run(() => GitHubReleaseClient.TryGetLatestReleaseTag());
+            settings.LastUpdateCheckUtc = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
+            SettingsManager.Save();
+
+            if (string.IsNullOrWhiteSpace(tag))
+                return;
+
+            if (tag.Trim().TrimStart('v') == Program.AppVersion.Trim().TrimStart('v'))
+                return;
+
+            Write($"[INFO] A newer release is available: {tag}. Use Settings > Advanced to install it.");
+        }
+        catch
+        {
+            // Update checks are best effort and must never interrupt startup.
+        }
     }
 
     private void OpenOutputFolder()
@@ -2576,6 +2749,68 @@ public sealed class ConverterForm : Form
                 Arguments = $"\"{folder}\"",
                 UseShellExecute = true
             });
+        }
+    }
+
+    /// <summary>
+    /// Cheap pre-flight check so a bad input is reported before a conversion starts.
+    /// Read-only: nothing is written and the archive is never modified.
+    /// </summary>
+    private bool ValidateInputMod(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            if (info.Length == 0)
+            {
+                Fail("[ERROR] The selected input file is empty (0 bytes).");
+                return false;
+            }
+
+            Write($"[INFO] Checking {info.Name} ({info.Length / 1024} KB) before converting...");
+
+            using var archive = System.IO.Compression.ZipFile.OpenRead(path);
+            var entries = archive.Entries
+                .Where(entry => !string.IsNullOrEmpty(entry.Name))
+                .ToArray();
+
+            if (entries.Length == 0)
+            {
+                Fail("[ERROR] The selected input archive is empty.");
+                return false;
+            }
+
+            var hasVehicleDefinitions = entries.Any(entry =>
+                entry.FullName.Replace('\\', '/').Contains("def/vehicle", StringComparison.OrdinalIgnoreCase));
+
+            if (!hasVehicleDefinitions)
+            {
+                Fail("[ERROR] No def/vehicle entries were found in the selected input. " +
+                     "This does not look like an ATS mod, so it cannot be converted.");
+                return false;
+            }
+
+            var encrypted = entries
+                .Where(entry => !entry.FullName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                .Where(entry => EncryptedModScanner.EntryLooksEncrypted(entry))
+                .Select(entry => entry.FullName)
+                .ToArray();
+
+            if (encrypted.Length > 0)
+            {
+                Write($"[WARNING] {encrypted.Length} file(s) inside the archive are encrypted and cannot be converted.");
+                Write("          Encrypted files (first few): " + string.Join(", ", encrypted.Take(3)));
+            }
+
+            Write($"[INFO] Input looks valid: {entries.Length} entr{(entries.Length == 1 ? "y" : "ies")}.");
+            return true;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or System.IO.IOException or UnauthorizedAccessException)
+        {
+            // A password-protected archive lands here; report it plainly.
+            Fail("[ERROR] The selected input could not be opened: " + ex.Message +
+                 (ex is InvalidDataException ? " It may be password protected or corrupted." : string.Empty));
+            return false;
         }
     }
 
@@ -2788,6 +3023,11 @@ public sealed class ConverterForm : Form
         var autoSaveSettings = settings.AutoSaveSettings;
         var verboseLogging = settings.VerboseLogging;
         var backupOriginal = settings.BackupOriginal;
+        var rememberWindowLayout = settings.RememberWindowLayout;
+        var validateInputBeforeConverting = settings.ValidateInputBeforeConverting;
+        var checkForUpdatesAutomatically = settings.CheckForUpdatesAutomatically;
+        var openOutputFolderAfterConversion = settings.OpenOutputFolderAfterConversion;
+        var maxLogLines = settings.MaxLogLines;
 
         void PreviewFontSettings()
         {
@@ -2816,6 +3056,23 @@ public sealed class ConverterForm : Form
             };
             contentScroll.Controls.Add(title);
             y += 38;
+
+            // Checkbox option row, matching the style used on the Advanced tab.
+            void AddOption(string caption, bool isChecked, Action<bool> onChanged)
+            {
+                var box = new CheckBox
+                {
+                    Text = caption,
+                    Checked = isChecked,
+                    ForeColor = Theme.Text,
+                    BackColor = Color.Transparent,
+                    AutoSize = true,
+                    Location = new Point(0, y)
+                };
+                box.CheckedChanged += (_, _) => onChanged(box.Checked);
+                contentScroll.Controls.Add(box);
+                y += 42;
+            }
 
             void AddField(string label, string description, Control input)
             {
@@ -2932,6 +3189,30 @@ public sealed class ConverterForm : Form
                     outputFolderRow.Controls.Add(outputFolderInput);
                     outputFolderRow.Controls.Add(browseButton);
                     AddField("Default Output Folder", "Where converted mods are written", outputFolderRow);
+
+                    contentScroll.Controls.Add(new Label
+                    {
+                        Text = "Window and updates",
+                        Font = Theme.UiFont(10f, FontStyle.Bold),
+                        ForeColor = Theme.Text,
+                        AutoSize = true,
+                        Location = new Point(0, y)
+                    });
+                    y += 28;
+
+                    AddOption("Remember window size and position", rememberWindowLayout, value => rememberWindowLayout = value);
+                    AddOption("Check the selected mod before converting", validateInputBeforeConverting, value => validateInputBeforeConverting = value);
+                    AddOption("Check for updates automatically", checkForUpdatesAutomatically, value => checkForUpdatesAutomatically = value);
+
+                    contentScroll.Controls.Add(new Label
+                    {
+                        Text = DescribeLastUpdateCheck(settings.LastUpdateCheckUtc),
+                        Font = Theme.UiFont(8.75f),
+                        ForeColor = Theme.Muted,
+                        AutoSize = true,
+                        Location = new Point(0, y)
+                    });
+                    y += 40;
                     break;
 
                 case "Customization":
@@ -3279,6 +3560,46 @@ public sealed class ConverterForm : Form
                     };
                     updateButton.Click += async (_, _) => await BeginGitHubUpdateAsync(updateButton);
                     contentScroll.Controls.Add(updateButton);
+                    y += 56;
+
+                    AddOption("Open the output folder when a conversion finishes", openOutputFolderAfterConversion,
+                        value => openOutputFolderAfterConversion = value);
+
+                    var maxLogInput = new NumericUpDown
+                    {
+                        Minimum = 200,
+                        Maximum = 100_000,
+                        Increment = 200,
+                        Value = Math.Clamp(maxLogLines, 200, 100_000),
+                        BackColor = Theme.Field,
+                        ForeColor = Theme.Text,
+                        Location = new Point(0, y),
+                        Size = new Size(120, 30)
+                    };
+                    maxLogInput.ValueChanged += (_, _) => maxLogLines = (int)maxLogInput.Value;
+                    AddField("Maximum log lines", "Older log lines are dropped once the conversion log passes this limit", maxLogInput);
+
+                    var resetButton = new FlatButton
+                    {
+                        Text = "Reset all settings",
+                        Size = new Size(180, 36),
+                        Location = new Point(0, y)
+                    };
+                    resetButton.Click += (_, _) =>
+                    {
+                        using var confirm = new ThemedConfirmForm(
+                            "Reset all settings",
+                            "Every preference returns to its default. Your account, unlocked themes and converted mods are not affected.",
+                            "Reset settings",
+                            "Cancel");
+                        if (confirm.ShowDialog(settingsPage) != DialogResult.OK)
+                            return;
+
+                        SettingsManager.Reset();
+                        settingsSaved = false;
+                        UpdateContent("General");
+                    };
+                    contentScroll.Controls.Add(resetButton);
                     y += 46;
 
                     break;
@@ -3357,6 +3678,11 @@ public sealed class ConverterForm : Form
             settings.AutoSaveSettings = autoSaveSettings;
             settings.VerboseLogging = verboseLogging;
             settings.BackupOriginal = backupOriginal;
+            settings.RememberWindowLayout = rememberWindowLayout;
+            settings.ValidateInputBeforeConverting = validateInputBeforeConverting;
+            settings.CheckForUpdatesAutomatically = checkForUpdatesAutomatically;
+            settings.OpenOutputFolderAfterConversion = openOutputFolderAfterConversion;
+            settings.MaxLogLines = Math.Clamp(maxLogLines, 200, 100_000);
             SettingsManager.Save();
             settingsSaved = true;
 
@@ -3390,6 +3716,16 @@ public sealed class ConverterForm : Form
 
         control.Invalidate();
     }
+
+    /// <summary>Human-readable "last checked" text for the update preference.</summary>
+    internal static string DescribeLastUpdateCheck(string storedUtc) =>
+        DateTime.TryParse(
+            storedUtc,
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.RoundtripKind,
+            out var parsed)
+            ? "Last update check: " + parsed.ToLocalTime().ToString("g")
+            : "No update check has run yet.";
 
     private sealed class ChangelogGroup
     {
