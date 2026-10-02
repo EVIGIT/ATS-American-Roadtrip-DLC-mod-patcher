@@ -6,6 +6,8 @@ internal sealed record LocalUpdatePlan(
     string ExecutableName,
     string ProcessName,
     string LogPath,
+    string ReadyPath,
+    int AppProcessId,
     string? CleanupDirectory = null);
 
 internal static class LocalUpdater
@@ -51,7 +53,20 @@ internal static class LocalUpdater
                 executableName,
                 Path.GetFileNameWithoutExtension(executableName),
                 Path.Combine(Path.GetTempPath(), "ats-roadtrip-local-update.log"),
+                Path.Combine(Path.GetTempPath(), "ats-roadtrip-local-update.ready"),
+                Environment.ProcessId,
                 cleanupDirectory == null ? null : Path.GetFullPath(cleanupDirectory));
+
+            // A stale marker from a previous run would make the app believe the updater
+            // is alive before this one has even started.
+            try
+            {
+                File.Delete(plan.ReadyPath);
+            }
+            catch
+            {
+            }
+
             return true;
         }
         catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException or NotSupportedException)
@@ -79,28 +94,54 @@ $executableName = {{PowerShellLiteral(plan.ExecutableName)}}
 $processName = {{PowerShellLiteral(plan.ProcessName)}}
 $logPath = {{PowerShellLiteral(plan.LogPath)}}
 $cleanupDirectory = {{(plan.CleanupDirectory == null ? "$null" : PowerShellLiteral(plan.CleanupDirectory))}}
+$appProcessId = {{plan.AppProcessId}}
+$readyPath = {{PowerShellLiteral(plan.ReadyPath)}}
 $waitForAppExit = {{waitExpression}}
 $relaunchApp = {{relaunchExpression}}
 $showErrorDialog = {{dialogExpression}}
+
+# Signal the app that this helper is alive before the app closes, so the helper is
+# never orphaned by the app exiting first.
+try {
+    Remove-Item -LiteralPath $readyPath -Force -ErrorAction SilentlyContinue
+    Set-Content -LiteralPath $readyPath -Value 'ready' -Encoding ascii
+    Set-Content -LiteralPath $logPath -Value "Updater started $(Get-Date -Format o)" -Encoding utf8
+} catch {
+}
+
 try {
     if ($waitForAppExit) {
-        while (@(Get-Process -Name $processName -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $PID }).Count -gt 0) {
-            Start-Sleep -Milliseconds 500
+        # Wait on the exact process id rather than the name, so the helper never
+        # mistakes another build of the same app for the running one.
+        while (Get-Process -Id $appProcessId -ErrorAction SilentlyContinue) {
+            Start-Sleep -Milliseconds 300
         }
+        # Give Windows a moment to release the handles the app was holding.
+        Start-Sleep -Milliseconds 800
     }
-    & robocopy.exe $sourcePath $targetPath /E /COPY:DAT /R:2 /W:1 | Out-Null
-    if ($LASTEXITCODE -ge 8) {
-        throw "Copy failed with Robocopy exit code $LASTEXITCODE."
+    # Retry: the first attempt can still trip over an antivirus scanner or indexer
+    # holding a file the app released a moment ago.
+    $exitCode = 1
+    for ($attempt = 1; $attempt -le 5; $attempt++) {
+        & robocopy.exe $sourcePath $targetPath /E /COPY:DAT /R:2 /W:1 | Out-Null
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -lt 8) { break }
+        Start-Sleep -Milliseconds 800
     }
+    if ($exitCode -ge 8) {
+        throw "Copy failed with Robocopy exit code $exitCode."
+    }
+    Add-Content -LiteralPath $logPath -Value "Files copied at $(Get-Date -Format o)" -Encoding utf8
     if ($relaunchApp) {
         Start-Process -FilePath (Join-Path $targetPath $executableName) -WorkingDirectory $targetPath
+        Add-Content -LiteralPath $logPath -Value "App relaunched at $(Get-Date -Format o)" -Encoding utf8
     }
     if ($cleanupDirectory -and (Test-Path -LiteralPath $cleanupDirectory)) {
         Remove-Item -LiteralPath $cleanupDirectory -Recurse -Force
     }
 } catch {
     $message = $_.Exception.Message
-    [System.IO.File]::WriteAllText($logPath, $message)
+    Add-Content -LiteralPath $logPath -Value "FAILED: $message" -Encoding utf8
     if ($showErrorDialog) {
         Add-Type -AssemblyName System.Windows.Forms
         [System.Windows.Forms.MessageBox]::Show("The local update failed:`n$message`n`nDetails: $logPath", "Update failed", 'OK', 'Error') | Out-Null

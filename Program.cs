@@ -645,7 +645,7 @@ internal static class GitHubDeviceSignIn
 internal static class Program
 {
     public const string AppName = "ATS American Roadtrip Car Patcher";
-    public const string AppVersion = "v1.3.5";
+    public const string AppVersion = "v1.3.6";
 
     [STAThread]
     static void Main()
@@ -2870,11 +2870,65 @@ public sealed class ConverterForm : Form
         startInfo.ArgumentList.Add("-EncodedCommand");
         startInfo.ArgumentList.Add(encodedScript);
 
-        if (Process.Start(startInfo) == null)
+        var updater = Process.Start(startInfo);
+        if (updater == null)
             throw new InvalidOperationException("Could not start the updater process.");
+
+        // Do not close the app until the helper has confirmed it is alive. Closing
+        // straight away is what made updates "close the app and do nothing".
+        if (!WaitForUpdaterReady(plan, updater, TimeSpan.FromSeconds(20)))
+        {
+            try
+            {
+                if (!updater.HasExited)
+                    updater.Kill(true);
+            }
+            catch
+            {
+            }
+
+            throw new InvalidOperationException(
+                "The updater helper did not start, so nothing was changed. " +
+                "Check that Windows PowerShell is available on this machine.");
+        }
 
         SettingsManager.Save();
         Close();
+    }
+
+    /// <summary>
+    /// Waits for the helper to write its ready marker. Returns false if it exited early
+    /// or never reported in, so the app can stay open and explain what went wrong.
+    /// </summary>
+    private static bool WaitForUpdaterReady(LocalUpdatePlan plan, Process updater, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                if (File.Exists(plan.ReadyPath))
+                    return true;
+            }
+            catch
+            {
+                return false;
+            }
+
+            try
+            {
+                if (updater.HasExited)
+                    return false;
+            }
+            catch
+            {
+                return false;
+            }
+
+            Thread.Sleep(150);
+        }
+
+        return false;
     }
 
     private async Task BeginGitHubUpdateAsync(FlatButton updateButton)

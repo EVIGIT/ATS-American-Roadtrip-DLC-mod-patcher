@@ -1,6 +1,6 @@
 # ATS American Roadtrip Car Patcher
 
-Current App Version: v1.3.5
+Current App Version: v1.3.6
 
 ## Unreleased
 
@@ -9,6 +9,14 @@ Current App Version: v1.3.5
 ### Fixed
 
 ### Changed
+
+## v1.3.6
+
+### Fixed
+- "Install latest GitHub release" no longer closes the app and does nothing. The app now waits for the updater helper to confirm it is running before it closes, and stays open with an explanation if the helper never starts.
+- The updater helper now waits on the exact process id instead of the process name, so it cannot mistake another build of the same app for the running one.
+- The file copy retries up to five times, because the first attempt could still fail against a scanner holding a file the app had just released.
+- The updater now writes a log at every step (started, copied, relaunched, or failed) instead of only on failure, so a silent no-op can be diagnosed. Details: `%TEMP%\ats-roadtrip-local-update.log`.
 
 ## v1.3.5
 
