@@ -146,7 +146,7 @@ internal static class GitHubReleaseClient
         }
         catch (System.ComponentModel.Win32Exception ex)
         {
-            throw new InvalidOperationException("GitHub CLI is required for private repository access. Install `gh` and sign in with `gh auth login`.", ex);
+            throw new InvalidOperationException("GitHub CLI is required to read releases and download updates. Install `gh` and sign in with `gh auth login`.", ex);
         }
 
         using (process)
