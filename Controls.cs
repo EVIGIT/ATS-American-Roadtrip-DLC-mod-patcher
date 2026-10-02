@@ -19,12 +19,6 @@ namespace ATSRoadTripConverter;
 // A GitHub sign-in unlocks the GitHub tier of themes today. The Ko-fi tier is already
 // wired up everywhere except the check itself: when the Ko-fi page goes live, replace
 // the body of HasKoFiAccess with a membership check and nothing else has to change.
-/// <summary>
-/// GitHub OAuth device flow, the only flow a desktop app can run without shipping a
-/// client secret. The user gets a short code, approves it in a browser, and the app
-/// polls until the token arrives.
-/// </summary>
-
 internal sealed class ThemeSwatch : Control
 {
     private bool _selected;

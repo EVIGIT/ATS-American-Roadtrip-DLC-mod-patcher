@@ -19,12 +19,6 @@ namespace ATSRoadTripConverter;
 // A GitHub sign-in unlocks the GitHub tier of themes today. The Ko-fi tier is already
 // wired up everywhere except the check itself: when the Ko-fi page goes live, replace
 // the body of HasKoFiAccess with a membership check and nothing else has to change.
-/// <summary>
-/// GitHub OAuth device flow, the only flow a desktop app can run without shipping a
-/// client secret. The user gets a short code, approves it in a browser, and the app
-/// polls until the token arrives.
-/// </summary>
-
 internal sealed class SignInForm : Form
 {
     private readonly FlatButton _primaryButton = new();
@@ -73,7 +67,7 @@ internal sealed class SignInForm : Form
 
         Controls.Add(new Label
         {
-            Text = "Unlock the supporter themes",
+            Text = "Unlock the extra themes",
             Font = Theme.UiFont(16f, FontStyle.Bold),
             ForeColor = Theme.Text,
             AutoSize = true,
@@ -274,7 +268,7 @@ internal sealed class SignInForm : Form
                 return;
 
             AuthSession.Save(accessToken, login);
-            SetStatus($"Signed in as {login}", "The supporter themes are unlocked on this device.");
+            SetStatus($"Signed in as {login}", "The GitHub themes are unlocked on this device.");
             await Task.Delay(700).ConfigureAwait(true);
             if (!IsDisposed)
             {

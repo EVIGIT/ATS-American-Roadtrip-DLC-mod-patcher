@@ -1,6 +1,6 @@
 # ATS American Roadtrip Car Patcher
 
-Current App Version: v1.3.7
+Current App Version: v1.3.7.1
 
 ## Unreleased
 
@@ -9,6 +9,15 @@ Current App Version: v1.3.7
 ### Fixed
 
 ### Changed
+
+## v1.3.7.1
+
+### Fixed
+- Sign-in wording no longer promises that signing in unlocks "the supporter themes". Signing in with GitHub unlocks the GitHub tier, so the window title and the signed-in status line now say what actually happens.
+- The GitHub tier prompt is titled "GitHub theme" rather than the ambiguous "Supporter theme".
+
+### Changed
+- Removed seven orphaned XML doc comments left behind in the v1.3.7 file split. Comment-only; no behaviour change.
 
 ## v1.3.7
 

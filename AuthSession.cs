@@ -8,13 +8,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 namespace ATSRoadTripConverter;
 // Settings persistence classes
-/// <summary>
-/// Wraps the sign-in token with Windows DPAPI (CryptProtectData) so it can only be
-/// decrypted by this user account on this machine. P/Invoked straight from crypt32.dll
-/// so the app keeps its zero-dependency footprint - the ProtectedData NuGet package is
-/// not needed for a net8.0-windows target.
-/// </summary>
-
 internal static class LocalSecretProtector
 {
     private const int CryptprotectUiForbidden = 0x1;
