@@ -9,6 +9,10 @@ Current App Version: v1.3.7
 ### Fixed
 
 ### Changed
+
+## v1.3.7
+
+### Changed
 - `Program.cs` is no longer a single ~4,000 line file. Code is split by responsibility with no behaviour change: `Program.cs` (entry point only), `Theme.cs`, `Controls.cs`, `Settings.cs`, `AuthSession.cs`, `GitHubSignIn.cs`, `ThemedIcon.cs`, `SignInForm.cs`, `ThemedConfirmForm.cs`, and `ConverterForm` split into `ConverterForm.Layout.cs` (fields and layout) and `ConverterForm.Conversion.cs` (conversion, logging and settings).
 
 ## v1.3.6
