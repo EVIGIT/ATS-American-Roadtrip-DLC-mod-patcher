@@ -189,7 +189,7 @@ public static class SettingsManager
 internal static class Program
 {
     public const string AppName = "ATS American Roadtrip Car Patcher";
-    public const string AppVersion = "v1.3";
+    public const string AppVersion = "v1.3.1";
 
     [STAThread]
     static void Main()
@@ -2003,7 +2003,15 @@ public sealed class ConverterForm : Form
         {
             if (line.StartsWith("## ", StringComparison.Ordinal))
             {
-                release = new ChangelogRelease { Title = line[3..].Trim() };
+                var title = line[3..].Trim();
+                if (title.Equals("Unreleased", StringComparison.OrdinalIgnoreCase))
+                {
+                    release = null;
+                    group = null;
+                    continue;
+                }
+
+                release = new ChangelogRelease { Title = title };
                 releases.Add(release);
                 group = null;
             }

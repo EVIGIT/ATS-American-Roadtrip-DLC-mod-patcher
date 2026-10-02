@@ -1,8 +1,12 @@
-# ATS American Roadtrip Car Patcher v1.3
+# ATS American Roadtrip Car Patcher v1.3.1
 
 This package is a complete .NET 8 WinForms project, rebuilt from the v2 project you supplied.
 
 ## Changelog
+
+### v1.3.1
+
+- Hid the Unreleased section from the in-app release history.
 
 ### v1.3
 

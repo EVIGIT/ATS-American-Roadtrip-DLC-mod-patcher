@@ -1,6 +1,6 @@
 # ATS American Roadtrip Car Patcher
 
-Current App Version: v1.3
+Current App Version: v1.3.1
 
 ## Unreleased
 
@@ -9,6 +9,11 @@ Current App Version: v1.3
 ### Fixed
 
 ### Changed
+
+## v1.3.1
+
+### Fixed
+- Hid the Unreleased section from the in-app release history.
 
 ## v1.3
 
