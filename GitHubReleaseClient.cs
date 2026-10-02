@@ -17,12 +17,38 @@ internal static class GitHubReleaseClient
     {
         try
         {
+            // Read the changelog at the newest published release rather than the default
+            // branch. The default branch can legitimately lag behind a release that was
+            // tagged from another branch, which used to hide the newest entry in-app.
+            var reference = TryGetLatestReleaseTag() ?? "HEAD";
             var encodedContent = RunGh(TimeSpan.FromSeconds(20),
                 "api",
-                $"repos/{Repository}/contents/CHANGELOG.md",
+                $"repos/{Repository}/contents/CHANGELOG.md?ref={Uri.EscapeDataString(reference)}",
                 "--jq",
                 ".content");
             return System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(encodedContent.Trim()));
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? TryGetLatestReleaseTag()
+    {
+        try
+        {
+            var tag = RunGh(TimeSpan.FromSeconds(20),
+                "release",
+                "view",
+                "latest",
+                "--repo",
+                Repository,
+                "--json",
+                "tagName",
+                "--jq",
+                ".tagName").Trim();
+            return string.IsNullOrWhiteSpace(tag) ? null : tag;
         }
         catch
         {

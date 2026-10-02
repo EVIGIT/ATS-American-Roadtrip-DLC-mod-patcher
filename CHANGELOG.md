@@ -7,6 +7,7 @@ Current App Version: v1.3.3
 ### Added
 
 ### Fixed
+- The in-app Changelog now reads the newest published release instead of the repository's default branch, so it no longer hides the latest entry when a release is tagged from another branch.
 
 ### Changed
 
