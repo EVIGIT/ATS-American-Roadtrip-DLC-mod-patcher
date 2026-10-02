@@ -1,8 +1,13 @@
-# ATS American Roadtrip Car Patcher v1.3.1
+# ATS American Roadtrip Car Patcher v1.3.2
 
 This package is a complete .NET 8 WinForms project, rebuilt from the v2 project you supplied.
 
 ## Changelog
+
+### v1.3.2
+
+- Fixed hatchback and van speed limits during conversion.
+- Added automatic installation of validated GitHub releases after download.
 
 ### v1.3.1
 
@@ -187,9 +192,8 @@ In patch mode:
 - Vehicle assets from `vehicle/truck/` are copied to `vehicle/car/` with converted path references
 - This ensures textures and models work correctly without requiring asset path changes in the original mod
 
-Car interiors without `speed_limiter_value` get one based on the vehicle type
-(163 km/h, sedan 190, sport 250, muscle/veteran 0 = no limiter), matching the
-official Road Trip cars.
+Car interiors without `speed_limiter_value` get one based on the selected
+vehicle type (sedan 190 km/h, hatchback 180, pickup 163, van 140).
 
 Definition files that the mod author encrypted (`3nK`, `BSII`, `ScsC`) are not
 decrypted. They are counted as validation issues, because the car cannot work in

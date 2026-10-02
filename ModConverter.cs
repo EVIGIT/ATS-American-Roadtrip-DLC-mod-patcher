@@ -746,8 +746,8 @@ public static class ModConverter
         }
 
         var stalePathPattern = new Regex(assetsMoved || isPatchMode
-            ? @"(?i)(/|\\)?def/vehicle/truck(/|\\)|(/|\\)vehicle/truck(/|\\)|truck_dealer"
-            : @"(?i)(/|\\)?def/vehicle/truck(/|\\)|truck_dealer");
+            ? @"(?i)(/|\\)?def/vehicle/truck(/|\\)|(/|\\)vehicle/truck(/|\\)|(^|/|\\)truck_dealer(/|\\)"
+            : @"(?i)(/|\\)?def/vehicle/truck(/|\\)|(^|/|\\)truck_dealer(/|\\)");
 
 
         foreach (var file in Directory.EnumerateFiles(
@@ -902,8 +902,8 @@ public static class ModConverter
     public static int DefaultSpeedLimit(string vehicleType) => vehicleType switch
     {
         "sedan" => 190,
-        "sport" => 250,
-        "muscle" or "veteran" => 0,
+        "hatchback" => 180,
+        "van" => 140,
         _ => 163
     };
 

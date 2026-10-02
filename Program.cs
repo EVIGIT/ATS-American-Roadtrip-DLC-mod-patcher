@@ -189,7 +189,7 @@ public static class SettingsManager
 internal static class Program
 {
     public const string AppName = "ATS American Roadtrip Car Patcher";
-    public const string AppVersion = "v1.3.1";
+    public const string AppVersion = "v1.3.2";
 
     [STAThread]
     static void Main()
@@ -1407,15 +1407,6 @@ public sealed class ConverterForm : Form
                 throw new InvalidOperationException(error);
             }
 
-            var confirmation = MessageBox.Show(
-                this,
-                $"Version {package.TagName} is ready. The app will close, install the release, and restart. Continue?",
-                "Install GitHub update",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Question);
-            if (confirmation != DialogResult.Yes)
-                return;
-
             StartUpdater(plan!);
             package = null;
         }
@@ -1844,7 +1835,7 @@ public sealed class ConverterForm : Form
 
                     contentScroll.Controls.Add(new Label
                     {
-                        Text = "Install a compiled build from a local output folder.",
+                        Text = "Downloads the latest GitHub release and restarts with the update installed.",
                         Font = Theme.UiFont(8.75f),
                         ForeColor = Theme.Muted,
                         AutoSize = true,
@@ -1854,7 +1845,7 @@ public sealed class ConverterForm : Form
 
                     var updateButton = new FlatButton
                     {
-                        Text = "Check GitHub for updates...",
+                        Text = "Install latest GitHub release...",
                         Size = new Size(220, 36),
                         Location = new Point(0, y)
                     };

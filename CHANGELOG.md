@@ -1,6 +1,6 @@
 # ATS American Roadtrip Car Patcher
 
-Current App Version: v1.3.1
+Current App Version: v1.3.2
 
 ## Unreleased
 
@@ -9,6 +9,14 @@ Current App Version: v1.3.1
 ### Fixed
 
 ### Changed
+
+## v1.3.2
+
+### Fixed
+- Applied the configured hatchback and van speed limits during conversion.
+
+### Changed
+- Installed validated GitHub releases automatically after download without another prompt.
 
 ## v1.3.1
 
