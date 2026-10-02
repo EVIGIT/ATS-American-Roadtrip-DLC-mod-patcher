@@ -10,12 +10,10 @@
     "ATSRoadTripConverter.code-workspace",
     "ATSRoadTripConverter.csproj",
     "ATSRoadTripConverter.sln",
-    "Build-Project.bat",
     "ModConverter.cs",
     "Program.cs",
     "Properties/launchSettings.json",
     "README.md",
-    "Run-Converter.bat",
     "ScsArchive.cs"
   ],
   "base": "ATS-RoadTrip-Converter-v2(1).zip supplied by user"

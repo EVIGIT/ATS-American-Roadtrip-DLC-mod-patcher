@@ -8,7 +8,6 @@ Current App Version: v1.2
 - Added authenticated GitHub changelog and release updates through GitHub CLI.
 - Added a tag-triggered GitHub Actions workflow that builds and publishes the Windows update package.
 - Added a VS Code watch-and-run task for faster development updates.
-- Added a `Watch-Converter.bat` launcher for running under `dotnet watch`.
 - Added a manual local-build updater to Advanced Settings.
 - Added a Windows updater smoke test using temporary install/build folders.
 - Added an in-window changelog page with navigation back to the converter.

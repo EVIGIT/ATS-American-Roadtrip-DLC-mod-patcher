@@ -14,7 +14,7 @@ Requirements: Windows and the .NET 8 SDK.
 dotnet build ATSRoadTripConverter.csproj -c Release
 ```
 
-Run `Run-Converter.bat` to launch the Debug build. In VS Code, use the **Hot Reload and run ATSRoadTripConverter** task to launch with `dotnet watch`.
+Run `dotnet run --project ATSRoadTripConverter.csproj --configuration Debug` to launch the app. In VS Code, use the **Hot Reload and run ATSRoadTripConverter** task for `dotnet watch`.
 
 ## Changelog and releases
 
