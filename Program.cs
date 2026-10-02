@@ -246,9 +246,15 @@ internal static class Theme
         {
             if (parent is Card)
                 return Surface;
+
+            // Transparent layout panels paint nothing, so keep walking until we reach a
+            // surface that really is drawn. Clearing to Color.Transparent renders as
+            // black behind a non-layered window, which shows up in the rounded corners.
+            if (parent.BackColor.A == 255)
+                return parent.BackColor;
         }
 
-        return control.Parent?.BackColor ?? Background;
+        return Background;
     }
 
     public static LinearGradientBrush AccentGradient(Rectangle rect) =>
