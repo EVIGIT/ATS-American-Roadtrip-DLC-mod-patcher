@@ -18,6 +18,7 @@ Current App Version: v1.2
 
 ### Changed
 - Added more top spacing to changelog release sections.
+- Cleaned up conversion option switches and wrapped their descriptions.
 
 ## v1.2
 

@@ -420,7 +420,7 @@ internal sealed class ToggleSwitch : Control
     {
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.Clear(Parent?.BackColor ?? Theme.Surface);
+        g.Clear(BackColor);
 
         var track = new Rectangle(0, 4, 40, 22);
         using (var path = Theme.Rounded(track, 11))
@@ -435,7 +435,7 @@ internal sealed class ToggleSwitch : Control
         using var small = Theme.UiFont(8.75f);
         TextRenderer.DrawText(g, Description, small,
             new Rectangle(52, 22, Width - 52, Height - 22), Theme.Muted,
-            TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+            TextFormatFlags.Left | TextFormatFlags.WordBreak);
     }
 }
 
@@ -771,8 +771,8 @@ public sealed class ConverterForm : Form
         card.Controls.Add(divider);
 
         PlaceToggle(card, _patchOnly, 18, 156, ContentWidth - 36);
-        PlaceToggle(card, _translateDealer, 18, 204, half);
-        PlaceToggle(card, _moveVehicleAssets, 18 + half + 16, 204, half);
+        PlaceToggle(card, _translateDealer, 18, 218, half);
+        PlaceToggle(card, _moveVehicleAssets, 18 + half + 16, 218, half);
 
         return y + 290 + 16;
     }
@@ -900,7 +900,7 @@ public sealed class ConverterForm : Form
     private static void PlaceToggle(Control parent, ToggleSwitch toggle, int x, int y, int width)
     {
         toggle.Location = new Point(x, y);
-        toggle.Size = new Size(width, 44);
+        toggle.Size = new Size(width, 56);
         toggle.BackColor = Theme.Surface;
         parent.Controls.Add(toggle);
     }
