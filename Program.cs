@@ -20,36 +20,12 @@ public sealed class VehicleTypeCustom
     public bool IsBuiltIn { get; set; } = false;
 }
 
-public sealed class DealerPreset
-{
-    public string Name { get; set; } = "";
-    public string DealerId { get; set; } = "";
-    public string VehicleType { get; set; } = "pickup";
-    public bool MoveVehicleAssets { get; set; } = true;
-    public bool TranslateDealer { get; set; } = true;
-    public bool PatchOnly { get; set; } = false;
-    public string ReferenceFile { get; set; } = "";
-}
-
-public sealed class ConversionProfile
-{
-    public string Name { get; set; } = "";
-    public string InputFile { get; set; } = "";
-    public string OutputFolder { get; set; } = "";
-    public string DealerId { get; set; } = "";
-    public string VehicleType { get; set; } = "pickup";
-    public bool MoveVehicleAssets { get; set; } = true;
-    public bool TranslateDealer { get; set; } = true;
-    public bool PatchOnly { get; set; } = false;
-    public string ReferenceFile { get; set; } = "";
-}
-
 public sealed class AppSettings
 {
     public string DefaultDealerId { get; set; } = "volvo";
     public string DefaultVehicleType { get; set; } = "pickup";
     public string DefaultOutputFolder { get; set; } = "";
-    public string AccentColor { get; set; } = "#FF9128";
+    public string AccentColor { get; set; } = "#FF8A3D";
     public float FontSize { get; set; } = 9.5f;
     public string FontFamily { get; set; } = "Segoe UI";
     public bool AutoSaveSettings { get; set; } = true;
@@ -61,8 +37,6 @@ public sealed class AppSettings
     public string ThemeName { get; set; } = "";
 
     public List<VehicleTypeCustom> CustomVehicleTypes { get; set; } = new();
-    public List<DealerPreset> DealerPresets { get; set; } = new();
-    public List<ConversionProfile> ConversionProfiles { get; set; } = new();
 }
 
 public static class SettingsManager
@@ -214,11 +188,11 @@ internal static class Theme
 {
     public static IReadOnlyList<ThemePalette> Palettes { get; } = Array.AsReadOnly(new[]
     {
-        new ThemePalette("Roadtrip", Color.FromArgb(17, 19, 24), Color.FromArgb(26, 29, 36), Color.FromArgb(35, 39, 48), Color.FromArgb(48, 53, 64), Color.FromArgb(232, 234, 240), Color.FromArgb(140, 147, 163), Color.FromArgb(255, 145, 40)),
-        new ThemePalette("Midnight", Color.FromArgb(16, 25, 34), Color.FromArgb(23, 36, 47), Color.FromArgb(32, 49, 63), Color.FromArgb(48, 69, 84), Color.FromArgb(231, 240, 245), Color.FromArgb(145, 167, 180), Color.FromArgb(71, 190, 219)),
-        new ThemePalette("Evergreen", Color.FromArgb(19, 29, 25), Color.FromArgb(27, 41, 35), Color.FromArgb(37, 56, 47), Color.FromArgb(53, 75, 64), Color.FromArgb(231, 240, 233), Color.FromArgb(148, 169, 154), Color.FromArgb(93, 190, 119)),
-        new ThemePalette("Ember", Color.FromArgb(32, 24, 25), Color.FromArgb(45, 32, 33), Color.FromArgb(61, 43, 43), Color.FromArgb(80, 56, 55), Color.FromArgb(244, 233, 230), Color.FromArgb(179, 151, 147), Color.FromArgb(231, 116, 91)),
-        new ThemePalette("Daylight", Color.FromArgb(244, 246, 249), Color.FromArgb(255, 255, 255), Color.FromArgb(235, 238, 243), Color.FromArgb(205, 211, 220), Color.FromArgb(32, 37, 45), Color.FromArgb(99, 108, 121), Color.FromArgb(35, 117, 180))
+        new ThemePalette("Roadtrip", Color.FromArgb(13, 16, 21), Color.FromArgb(20, 25, 34), Color.FromArgb(27, 33, 44), Color.FromArgb(38, 46, 60), Color.FromArgb(233, 237, 244), Color.FromArgb(139, 149, 167), Color.FromArgb(255, 138, 61)),
+        new ThemePalette("Midnight", Color.FromArgb(10, 16, 26), Color.FromArgb(16, 24, 37), Color.FromArgb(23, 33, 50), Color.FromArgb(33, 46, 69), Color.FromArgb(230, 238, 247), Color.FromArgb(134, 151, 174), Color.FromArgb(76, 194, 255)),
+        new ThemePalette("Evergreen", Color.FromArgb(10, 18, 15), Color.FromArgb(16, 26, 22), Color.FromArgb(23, 36, 30), Color.FromArgb(33, 50, 42), Color.FromArgb(228, 240, 233), Color.FromArgb(134, 160, 150), Color.FromArgb(63, 217, 140)),
+        new ThemePalette("Ember", Color.FromArgb(23, 15, 16), Color.FromArgb(31, 21, 23), Color.FromArgb(42, 28, 30), Color.FromArgb(57, 38, 41), Color.FromArgb(244, 233, 231), Color.FromArgb(166, 144, 142), Color.FromArgb(255, 107, 87)),
+        new ThemePalette("Daylight", Color.FromArgb(245, 247, 250), Color.FromArgb(255, 255, 255), Color.FromArgb(238, 241, 246), Color.FromArgb(222, 228, 237), Color.FromArgb(16, 21, 28), Color.FromArgb(92, 103, 120), Color.FromArgb(37, 99, 235))
     });
 
     private static ThemePalette CurrentPalette =>
@@ -242,15 +216,57 @@ internal static class Theme
             }
             catch
             {
-                return Color.FromArgb(255, 145, 40);
+                return Color.FromArgb(255, 138, 61);
             }
         }
     }
     public static Color AccentHover => ControlPaint.Light(Accent, 0.2f);
+    public static Color AccentPressed => ControlPaint.Dark(Accent, 0.14f);
+
+    public static Color FieldHover =>
+        IsLightBackground ? ControlPaint.Dark(Field, 0.06f) : ControlPaint.Light(Field, 0.14f);
+
+    public static Color FieldPressed =>
+        IsLightBackground ? ControlPaint.Dark(Field, 0.13f) : ControlPaint.Dark(Field, 0.06f);
+
+    /// <summary>Readable foreground for text drawn on top of <paramref name="accent"/>.</summary>
+    public static Color OnAccent(Color accent)
+    {
+        var luminance = 0.299 * accent.R + 0.587 * accent.G + 0.114 * accent.B;
+        return luminance > 155 ? Color.FromArgb(14, 17, 22) : Color.White;
+    }
+
+    /// <summary>
+    /// Colour of the surface sitting directly behind <paramref name="control"/>.
+    /// Used so rounded corners erase cleanly instead of leaving stale pixels behind.
+    /// </summary>
+    public static Color HostColor(Control control)
+    {
+        for (var parent = control.Parent; parent != null; parent = parent.Parent)
+        {
+            if (parent is Card)
+                return Surface;
+        }
+
+        return control.Parent?.BackColor ?? Background;
+    }
+
+    public static LinearGradientBrush AccentGradient(Rectangle rect) =>
+        new(rect, ControlPaint.Light(Accent, 0.16f), ControlPaint.Dark(Accent, 0.12f), LinearGradientMode.Vertical);
+
     public static readonly Color Success = Color.FromArgb(76, 201, 128);
     public static readonly Color Warning = Color.FromArgb(240, 196, 70);
     public static readonly Color Error = Color.FromArgb(240, 92, 92);
     public static readonly Color Info = Color.FromArgb(110, 168, 254);
+
+    public static bool IsLightBackground
+    {
+        get
+        {
+            var background = Background;
+            return (0.299 * background.R + 0.587 * background.G + 0.114 * background.B) > 140;
+        }
+    }
 
     public static Font UiFont(float size, FontStyle style = FontStyle.Regular) =>
         new(SettingsManager.Current.FontFamily, size * Math.Clamp(SettingsManager.Current.FontSize, 8f, 16f) / 9.5f, style);
@@ -335,30 +351,39 @@ internal sealed class ThemeSwatch : Control
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
         g.Clear(Theme.Background);
-        using var surface = new SolidBrush(Palette.Surface);
-        using var background = new SolidBrush(Palette.Background);
-        using var swatchSurface = new SolidBrush(Palette.Surface);
-        using var accent = new SolidBrush(Palette.Accent);
-        g.FillRectangle(surface, ClientRectangle);
 
-        var swatch = new Rectangle(6, 6, Width - 12, 12);
-        var segmentWidth = swatch.Width / 3;
-        g.FillRectangle(background, swatch.X, swatch.Y, segmentWidth, swatch.Height);
-        g.FillRectangle(swatchSurface, swatch.X + segmentWidth, swatch.Y, segmentWidth, swatch.Height);
-        g.FillRectangle(accent, swatch.X + segmentWidth * 2, swatch.Y, swatch.Width - segmentWidth * 2, swatch.Height);
+        var rect = new Rectangle(0, 0, Width - 1, Height - 1);
+        using var cardPath = Theme.Rounded(rect, 10);
+        using (var surface = new SolidBrush(Palette.Surface))
+            g.FillPath(surface, cardPath);
 
-        TextRenderer.DrawText(g, Palette.Name, Font, new Rectangle(6, 22, Width - 12, 22), Palette.Text,
+        var swatch = new Rectangle(7, 7, Width - 14, 14);
+        using (var swatchPath = Theme.Rounded(swatch, 7))
+        {
+            g.SetClip(swatchPath);
+            using var background = new SolidBrush(Palette.Background);
+            using var swatchSurface = new SolidBrush(Palette.Surface);
+            using var accent = new SolidBrush(Palette.Accent);
+            var segmentWidth = swatch.Width / 3;
+            g.FillRectangle(background, swatch.X, swatch.Y, segmentWidth + 1, swatch.Height);
+            g.FillRectangle(swatchSurface, swatch.X + segmentWidth, swatch.Y, segmentWidth + 1, swatch.Height);
+            g.FillRectangle(accent, swatch.X + segmentWidth * 2, swatch.Y, swatch.Width - segmentWidth * 2, swatch.Height);
+            g.ResetClip();
+        }
+
+        TextRenderer.DrawText(g, Palette.Name, Font, new Rectangle(8, 25, Width - 16, 20), Palette.Text,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
         using var border = new Pen(_selected ? Palette.Accent : Theme.Border, _selected ? 2f : 1f);
-        g.DrawRectangle(border, new Rectangle(0, 0, Width - 1, Height - 1));
+        g.DrawPath(border, cardPath);
     }
 }
 
 internal sealed class Card : Panel
 {
-    public int CornerRadius { get; set; } = 10;
+    public int CornerRadius { get; set; } = 14;
     public bool DrawBorder { get; set; } = true;
 
     public Card()
@@ -390,11 +415,12 @@ internal sealed class FlatButton : Control
     private bool _pressed;
 
     public bool Primary { get; set; }
+    public int CornerRadius { get; set; } = 10;
 
     public FlatButton()
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
-                 ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.Opaque, true);
+                 ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
         BackColor = Theme.Surface;
         Cursor = Cursors.Hand;
         Font = Theme.UiFont(9.5f, FontStyle.Bold);
@@ -412,32 +438,46 @@ internal sealed class FlatButton : Control
 
     protected override void OnPaintBackground(PaintEventArgs e)
     {
+        // Erase with the surrounding surface so the rounded corners never leave stale pixels.
+        e.Graphics.Clear(Theme.HostColor(this));
     }
 
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
 
-        Color fill, text;
+        var rect = new Rectangle(0, 0, Width - 1, Height - 1);
+        if (rect.Width <= 0 || rect.Height <= 0)
+            return;
+
+        var radius = Math.Min(CornerRadius, Math.Min(rect.Width, rect.Height) / 2);
+        using var path = Theme.Rounded(rect, radius);
+
+        Color text;
         if (!Enabled)
         {
-            fill = Theme.Field;
+            using var fill = new SolidBrush(Theme.Field);
+            g.FillPath(fill, path);
             text = Theme.Muted;
         }
         else if (Primary)
         {
-            fill = _pressed ? Theme.Accent : _hover ? Theme.AccentHover : Theme.Accent;
-            text = Color.FromArgb(24, 20, 14);
+            using (var fill = Theme.AccentGradient(ClientRectangle))
+                g.FillPath(fill, path);
+            text = Theme.OnAccent(Theme.Accent);
         }
         else
         {
-            fill = _pressed ? Theme.Border : _hover ? Color.FromArgb(44, 49, 60) : Theme.Field;
+            var fill = _pressed ? Theme.FieldPressed : _hover ? Theme.FieldHover : Theme.Field;
+            using (var brush = new SolidBrush(fill))
+                g.FillPath(brush, path);
             text = Theme.Text;
+
+            using var ring = new Pen(Theme.Border);
+            g.DrawPath(ring, path);
         }
 
-        var rect = ClientRectangle;
-        using var brush = new SolidBrush(fill);
-        g.FillRectangle(brush, rect);
         TextRenderer.DrawText(g, Text, Font, rect, text,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
     }
@@ -462,6 +502,12 @@ internal sealed class ThemedComboBox : ComboBox
         Font = Theme.UiFont(10f);
         Margin = Padding.Empty;
         Padding = new Padding(8, 4, 26, 4);
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        // Match the host surface so rounded corners blend into the card / page behind them.
+        e.Graphics.Clear(Theme.HostColor(this));
     }
 
     protected override void OnDrawItem(DrawItemEventArgs e)
@@ -493,30 +539,35 @@ internal sealed class ThemedComboBox : ComboBox
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        base.OnPaint(e);
-
         var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+
         var rect = new Rectangle(0, 0, Width - 1, Height - 1);
+        var radius = Math.Min(10, Math.Min(rect.Width, rect.Height) / 2);
+        using var path = Theme.Rounded(rect, radius);
+
         using (var background = new SolidBrush(BackColor))
-            g.FillRectangle(background, rect);
+            g.FillPath(background, path);
+        using (var border = new Pen(Theme.Border, 1f))
+            g.DrawPath(border, path);
 
         var selectedText = SelectedItem?.ToString() ?? string.Empty;
-        var textRect = new Rectangle(8, 0, Math.Max(0, Width - 34), Height);
+        var textRect = new Rectangle(10, 0, Math.Max(0, Width - 36), Height);
         TextRenderer.DrawText(g, selectedText, Font, textRect, ForeColor,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
-        using (var border = new Pen(Theme.Border, 1f))
-            g.DrawRectangle(border, rect);
-
-        var arrowRect = new Rectangle(Width - 18, (Height - 10) / 2, 8, 10);
-        using var triangleBrush = new SolidBrush(Theme.Muted);
-        var points = new[]
+        var arrowRect = new Rectangle(Width - 19, (Height - 8) / 2, 9, 6);
+        using (var triangleBrush = new SolidBrush(Theme.Muted))
         {
-            new Point(arrowRect.Left, arrowRect.Top),
-            new Point(arrowRect.Right, arrowRect.Top),
-            new Point(arrowRect.Left + arrowRect.Width / 2, arrowRect.Bottom)
-        };
-        g.FillPolygon(triangleBrush, points);
+            g.SmoothingMode = SmoothingMode.None;
+            g.FillPolygon(triangleBrush, new[]
+            {
+                new Point(arrowRect.Left, arrowRect.Top),
+                new Point(arrowRect.Right, arrowRect.Top),
+                new Point(arrowRect.Left + arrowRect.Width / 2, arrowRect.Bottom)
+            });
+        }
+        g.SmoothingMode = SmoothingMode.AntiAlias;
     }
 }
 
@@ -561,25 +612,31 @@ internal sealed class ToggleSwitch : Control
 
     protected override void OnPaintBackground(PaintEventArgs e)
     {
+        e.Graphics.Clear(Theme.HostColor(this));
     }
 
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.Clear(BackColor);
+        g.Clear(Theme.HostColor(this));
 
-        var track = new Rectangle(0, 9, 40, 20);
-        var trackColor = _checked ? Theme.Accent : Theme.Field;
-        using (var trackPath = Theme.Rounded(track, 10))
-        using (var trackFill = new SolidBrush(trackColor))
-        {
+        var track = new Rectangle(0, 8, 44, 22);
+        using var trackPath = Theme.Rounded(track, 11);
+        using (var trackFill = new SolidBrush(_checked ? Theme.Accent : Theme.Field))
             g.FillPath(trackFill, trackPath);
+
+        if (!_checked)
+        {
+            using var trackRing = new Pen(Theme.Border, 1f);
+            g.DrawPath(trackRing, trackPath);
         }
 
-        var knobSize = 14;
-        var knobX = _checked ? track.Right - knobSize - 2 : track.X + 2;
+        var knobSize = 16;
+        var knobX = _checked ? track.Right - knobSize - 3 : track.X + 3;
         var knobRect = new Rectangle(knobX, track.Y + 3, knobSize, knobSize);
+        using (var halo = new SolidBrush(Color.FromArgb(48, 0, 0, 0)))
+            g.FillEllipse(halo, knobRect.X + 1, knobRect.Y + 1, knobRect.Width, knobRect.Height);
         using (var knob = new SolidBrush(Color.White))
             g.FillEllipse(knob, knobRect);
 
@@ -612,7 +669,7 @@ internal sealed class SlimProgress : Control
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
                  ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
-        Height = 6;
+        Height = 8;
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -633,6 +690,44 @@ internal sealed class SlimProgress : Control
         using var fillPath = Theme.Rounded(new Rectangle(0, 0, filled, Height - 1), Height / 2);
         using var fill = new LinearGradientBrush(rect, Theme.Accent, Theme.AccentHover, LinearGradientMode.Horizontal);
         g.FillPath(fill, fillPath);
+    }
+}
+
+/// <summary>Rounded, accent-tinted pill used for compact labels such as the version tag.</summary>
+internal sealed class Badge : Control
+{
+    public Badge()
+    {
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
+                 ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+        BackColor = Theme.Background;
+        Size = new Size(58, 24);
+        Font = Theme.UiFont(8.5f, FontStyle.Bold);
+        Margin = Padding.Empty;
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+
+        var accent = Theme.Accent;
+        var rect = new Rectangle(0, 0, Width - 1, Height - 1);
+        if (rect.Width <= 0 || rect.Height <= 0)
+            return;
+
+        var radius = Math.Min(12, Math.Min(rect.Width, rect.Height) / 2);
+        using var path = Theme.Rounded(rect, radius);
+
+        using (var baseFill = new SolidBrush(Theme.Background))
+            g.FillPath(baseFill, path);
+        using (var tint = new SolidBrush(Color.FromArgb(34, accent.R, accent.G, accent.B)))
+            g.FillPath(tint, path);
+        using (var border = new Pen(Color.FromArgb(100, accent.R, accent.G, accent.B), 1f))
+            g.DrawPath(border, path);
+
+        TextRenderer.DrawText(g, Text, Font, rect, accent,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
     }
 }
 
@@ -690,6 +785,7 @@ public sealed class ConverterForm : Form
         Text = "PATCH FOR ROAD TRIP",
         Primary = true,
         Height = 46,
+        CornerRadius = 23,
         Font = Theme.UiFont(11f, FontStyle.Bold)
     };
 
@@ -777,7 +873,7 @@ public sealed class ConverterForm : Form
     {
         try
         {
-            var enabled = 1;
+            var enabled = Theme.IsLightBackground ? 0 : 1;
             if (DwmSetWindowAttribute(Handle, 20, ref enabled, sizeof(int)) != 0)
                 DwmSetWindowAttribute(Handle, 19, ref enabled, sizeof(int));
         }
@@ -833,15 +929,11 @@ public sealed class ConverterForm : Form
             Location = new Point(Margin_ + 72, 56)
         });
 
-        var badge = new Label
+        var badge = new Badge
         {
             Text = Program.AppVersion,
-            Font = Theme.UiFont(9f, FontStyle.Bold),
-            ForeColor = Theme.Accent,
-            BackColor = Theme.Surface,
-            TextAlign = ContentAlignment.MiddleCenter,
-            Size = new Size(48, 24),
-            Location = new Point(Margin_ + ContentWidth - 48, 30),
+            Size = new Size(58, 24),
+            Location = new Point(Margin_ + ContentWidth - 58, 30),
             Anchor = AnchorStyles.Top | AnchorStyles.Right
         };
         Controls.Add(badge);
@@ -849,8 +941,8 @@ public sealed class ConverterForm : Form
         var settingsBtn = new FlatButton
         {
             Text = "Settings",
-            Location = new Point(Margin_ + ContentWidth - 132, 30),
-            Size = new Size(76, 24),
+            Location = new Point(Margin_ + ContentWidth - 164, 30),
+            Size = new Size(100, 24),
             Anchor = AnchorStyles.Top | AnchorStyles.Right
         };
         settingsBtn.Click += (_, _) => ShowSettings();
@@ -859,8 +951,8 @@ public sealed class ConverterForm : Form
         var changelogBtn = new FlatButton
         {
             Text = "Changelog",
-            Location = new Point(Margin_ + ContentWidth - 216, 30),
-            Size = new Size(76, 24),
+            Location = new Point(Margin_ + ContentWidth - 272, 30),
+            Size = new Size(100, 24),
             Anchor = AnchorStyles.Top | AnchorStyles.Right
         };
         changelogBtn.Click += (_, _) => ShowChangelog();
@@ -896,12 +988,7 @@ public sealed class ConverterForm : Form
         AddCaption(card, "Vehicle type", 160, 46);
         _vehicleType.Items.Clear();
         _vehicleType.Items.AddRange(new object[] { "Sedan", "Hatchback", "Pickup", "Van" });
-        var defaultVehicleType = SettingsManager.Current.DefaultVehicleType;
-        var selectedVehicleType = string.Equals(defaultVehicleType, "sedan", StringComparison.OrdinalIgnoreCase) ? "Sedan" :
-            string.Equals(defaultVehicleType, "hatchback", StringComparison.OrdinalIgnoreCase) ? "Hatchback" :
-            string.Equals(defaultVehicleType, "pickup", StringComparison.OrdinalIgnoreCase) ? "Pickup" :
-            string.Equals(defaultVehicleType, "van", StringComparison.OrdinalIgnoreCase) ? "Van" : "Pickup";
-        _vehicleType.SelectedItem = selectedVehicleType;
+        _vehicleType.SelectedItem = VehicleTypeIdToDisplay(SettingsManager.Current.DefaultVehicleType);
         _vehicleType.Location = new Point(160, 72);
         _vehicleType.Width = 120;
         card.Controls.Add(_vehicleType);
@@ -945,7 +1032,7 @@ public sealed class ConverterForm : Form
         Controls.Add(_convert);
 
         _progress.Location = new Point(Margin_, y + 60);
-        _progress.Size = new Size(ContentWidth - 200, 6);
+        _progress.Size = new Size(ContentWidth - 200, 8);
         _progress.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         Controls.Add(_progress);
 
@@ -987,6 +1074,12 @@ public sealed class ConverterForm : Form
             Size = new Size(ContentWidth, height),
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
         };
+        card.Controls.Add(new Panel
+        {
+            BackColor = Theme.Accent,
+            Location = new Point(18, 17),
+            Size = new Size(3, 12)
+        });
         card.Controls.Add(new Label
         {
             Text = title,
@@ -994,7 +1087,7 @@ public sealed class ConverterForm : Form
             ForeColor = Theme.Accent,
             BackColor = Theme.Surface,
             AutoSize = true,
-            Location = new Point(18, 16)
+            Location = new Point(27, 16)
         });
         Controls.Add(card);
         return card;
@@ -1004,9 +1097,9 @@ public sealed class ConverterForm : Form
     {
         parent.Controls.Add(new Label
         {
-            Text = text,
-            Font = Theme.UiFont(9f, FontStyle.Bold),
-            ForeColor = Theme.Text,
+            Text = text.ToUpperInvariant(),
+            Font = Theme.UiFont(8.5f, FontStyle.Bold),
+            ForeColor = Theme.Muted,
             BackColor = Theme.Surface,
             AutoSize = true,
             Location = new Point(x, y)
@@ -1017,15 +1110,20 @@ public sealed class ConverterForm : Form
     {
         var frame = new Panel
         {
-            BackColor = Theme.Field,
+            BackColor = Theme.Surface,
             Location = new Point(x, y),
             Size = new Size(width, 34),
-            Padding = new Padding(10, 8, 10, 0)
+            Padding = new Padding(10, 8, 10, 8)
         };
         frame.Paint += (_, e) =>
         {
-            using var pen = new Pen(box.Focused ? Theme.Accent : Theme.Border);
-            e.Graphics.DrawRectangle(pen, 0, 0, frame.Width - 1, frame.Height - 1);
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            var bounds = new Rectangle(0, 0, frame.Width - 1, frame.Height - 1);
+            using var path = Theme.Rounded(bounds, 8);
+            using (var fill = new SolidBrush(Theme.Field))
+                e.Graphics.FillPath(fill, path);
+            using var pen = new Pen(box.Focused ? Theme.Accent : Theme.Border, box.Focused ? 1.5f : 1f);
+            e.Graphics.DrawPath(pen, path);
         };
         box.GotFocus += (_, _) => frame.Invalidate();
         box.LostFocus += (_, _) => frame.Invalidate();
@@ -1133,6 +1231,50 @@ public sealed class ConverterForm : Form
             _dealerId.Text = first;
     }
 
+    private static string VehicleTypeIdToDisplay(string? value) =>
+        (value ?? "pickup").Trim().ToLowerInvariant() switch
+        {
+            "sedan" => "Sedan",
+            "hatchback" => "Hatchback",
+            "van" => "Van",
+            _ => "Pickup"
+        };
+
+    private static string VehicleTypeDisplayToId(string? value) =>
+        (value ?? "pickup").Trim().ToLowerInvariant() switch
+        {
+            "sedan" => "sedan",
+            "hatchback" => "hatchback",
+            "van" => "van",
+            _ => "pickup"
+        };
+
+    private static bool IsDetailLogLine(string line) =>
+        line.StartsWith("[EDITED]", StringComparison.Ordinal) ||
+        line.StartsWith("[DEALER]", StringComparison.Ordinal) ||
+        line.StartsWith("[ASSET]", StringComparison.Ordinal) ||
+        line.StartsWith("[PATCH]", StringComparison.Ordinal) ||
+        line.StartsWith("[COLLISION]", StringComparison.Ordinal) ||
+        line.StartsWith("[REFERENCE]", StringComparison.Ordinal) ||
+        line.StartsWith("[ARCHIVE]", StringComparison.Ordinal);
+
+    private void BackupOriginalMod(Action<string> log)
+    {
+        try
+        {
+            var backupPath = _input.Text + ".bak";
+            if (File.Exists(backupPath))
+                return;
+
+            File.Copy(_input.Text, backupPath);
+            log($"[INFO] Backed up the original mod to {backupPath}");
+        }
+        catch (Exception ex)
+        {
+            log($"[WARNING] Could not back up the original mod: {ex.Message}");
+        }
+    }
+
     private void UpdateMoveAssetsState()
     {
         _moveVehicleAssets.Enabled = !_patchOnly.Checked;
@@ -1195,8 +1337,20 @@ public sealed class ConverterForm : Form
         _progress.Value = 0;
         SetStatus("Patching...", Theme.Info);
 
+        var verboseLogging = SettingsManager.Current.VerboseLogging;
+        Action<string> logSink = verboseLogging
+            ? Write
+            : line =>
+            {
+                if (!IsDetailLogLine(line))
+                    Write(line);
+            };
+
         try
         {
+            if (SettingsManager.Current.BackupOriginal)
+                BackupOriginalMod(logSink);
+
             var settings = new ConversionSettings(
                 _input.Text,
                 _outputFolder.Text,
@@ -1205,12 +1359,12 @@ public sealed class ConverterForm : Form
                 _moveVehicleAssets.Checked,
                 _translateDealer.Checked,
                 _patchOnly.Checked,
-                _vehicleType.SelectedItem as string ?? "pickup");
+                VehicleTypeDisplayToId(_vehicleType.SelectedItem as string));
 
             var result = await Task.Run(() =>
                 ModConverter.Run(
                     settings,
-                    Write,
+                    logSink,
                     p => UpdateProgress(p)));
 
             Write("");
@@ -1228,6 +1382,14 @@ public sealed class ConverterForm : Form
             _progress.Value = 100;
             if (File.Exists(result.OutputFile))
                 _openOutput.Enabled = true;
+
+            if (SettingsManager.Current.AutoSaveSettings)
+            {
+                SettingsManager.Current.DefaultDealerId = _dealerId.Text.Trim();
+                SettingsManager.Current.DefaultOutputFolder = _outputFolder.Text.Trim();
+                SettingsManager.Current.DefaultVehicleType = VehicleTypeDisplayToId(_vehicleType.SelectedItem as string);
+                SettingsManager.Save();
+            }
         }
         catch (Exception ex)
         {
@@ -1596,11 +1758,7 @@ public sealed class ConverterForm : Form
                     };
                     vehicleTypeInput.Items.Clear();
                     vehicleTypeInput.Items.AddRange(new object[] { "Sedan", "Hatchback", "Pickup", "Van" });
-                    var selectedVehicleTypeSetting = string.Equals(defaultVehicleType, "sedan", StringComparison.OrdinalIgnoreCase) ? "Sedan" :
-                        string.Equals(defaultVehicleType, "hatchback", StringComparison.OrdinalIgnoreCase) ? "Hatchback" :
-                        string.Equals(defaultVehicleType, "pickup", StringComparison.OrdinalIgnoreCase) ? "Pickup" :
-                        string.Equals(defaultVehicleType, "van", StringComparison.OrdinalIgnoreCase) ? "Van" : "Pickup";
-                    vehicleTypeInput.SelectedItem = selectedVehicleTypeSetting;
+                    vehicleTypeInput.SelectedItem = VehicleTypeIdToDisplay(defaultVehicleType);
                     vehicleTypeInput.SelectedIndexChanged += (_, _) =>
                     {
                         defaultVehicleType = (vehicleTypeInput.SelectedItem?.ToString() ?? "Pickup").ToLowerInvariant();
@@ -1686,6 +1844,7 @@ public sealed class ConverterForm : Form
                             SettingsManager.Save();
                             ApplySettingsAppearance(this, 1f, previousAccent);
                             ApplySettingsAppearance(settingsPage, 1f, previousAccent);
+                            TryEnableDarkTitleBar();
                         };
                         themeSwatchRow.Controls.Add(swatch);
                     }
@@ -1934,9 +2093,10 @@ public sealed class ConverterForm : Form
 
             _dealerId.Text = settings.DefaultDealerId;
             _outputFolder.Text = settings.DefaultOutputFolder;
-            _vehicleType.SelectedItem = _vehicleType.Items.Contains(settings.DefaultVehicleType) ? settings.DefaultVehicleType : "pickup";
+            _vehicleType.SelectedItem = VehicleTypeIdToDisplay(settings.DefaultVehicleType);
             ApplySettingsAppearance(this, settings.FontSize / previousFontSize, previousAccent);
             Invalidate(true);
+            TryEnableDarkTitleBar();
             CloseActivePage();
         };
 
