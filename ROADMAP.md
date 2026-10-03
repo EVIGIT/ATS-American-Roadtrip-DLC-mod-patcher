@@ -316,7 +316,7 @@ first, then diff — that is the only way to attribute a difference to the code.
 5. ~~Dry-run preview~~ → **deferred to v1.3.9**.
 6. ~~Custom vehicle type editor~~ → **deferred to v1.3.9**.
 
-### Track D — GitHub updater — **diagnostics landed, re-diagnosis still open**
+### Track D — GitHub updater — **complete**
 
 Evidence from `%TEMP%\ats-roadtrip-local-update.log`:
 
@@ -382,9 +382,30 @@ folders", never as a robocopy exit code. Kept as defence in depth, not as the di
       product defects: the stand-in exited without writing its marker, and the source
       folder was missing `.runtimeconfig.json` so the relaunched process could not start.
       Both are recorded because a failing check here reads exactly like a broken release.
-- [ ] **One genuine update on a real installation.** This needs v1.3.8 published, so the
-      test is v1.3.7.2 → v1.3.8. The mechanism is verified above; what remains is
-      confirming the real app comes back up cleanly on a real desktop.
+- [x] **One genuine update on a real installation — done.** v1.3.7.2 → v1.3.8, verified
+      from `%TEMP%\ats-roadtrip-local-update.log`:
+      ```
+      Updater started          16:25:20.278
+      Copying 5 file(s) from  ...\ats-roadtrip-release-76c8c61e\extracted
+                        to    C:\Users\weesc\Downloads\ATS-American-Roadtrip-Car-Patcher-win-x64\
+      Robocopy attempt 1/5 exited with code 1
+        Files : 5 copied, 0 skipped, 0 FAILED
+        Bytes : 563.9 kB
+      Files copied at          16:25:21.471
+      App relaunched at        16:25:21.552
+      ```
+      Exit code 1 is success. The installed DLL contains `v1.3.8` and contains neither
+      `v1.3.7.2` nor `v1.3.7.1`, so the update really landed rather than half-applying.
+
+      Two details in that log that look wrong and are not:
+      - *The copied files kept an older timestamp* (`15:23:02`, before the 16:25 run). That
+        is `/COPY:DAT` preserving the source timestamps. A fresh write time would be the bug.
+      - *The installed DLL is smaller than a local build* (318,976 vs 319,488 bytes). The
+        release workflow publishes `--runtime win-x64`; a local `dotnet build` does not.
+        Different RID output, not a truncated copy.
+
+      Not confirmed: whether the relaunched window actually appeared on screen. The log
+      records `App relaunched` because `Start-Process` returned, which is all it can know.
 
 #### Why v1.3.7.2 exists
 
@@ -579,9 +600,9 @@ copy silently — use `-Game` for anything that shipped with the game.
 1. ~~Health check baseline → findings list to maintainer.~~ **Done** (Track A).
 2. ~~Track B fix + regression test.~~ **Done** (Track B, 31 checks pass).
 3. ~~Track C items 1–2.~~ **Done** — Recent button, partial-work-folder logging.
-4. Track D fix + extended smoke test. **Done**, with one item deliberately left open: the
-   updater mechanism is verified (12/12), but a real update on a real installation still
-   has to happen. That test is v1.3.7.2 → v1.3.8, so it can only run once this is released.
+4. ~~Track D fix + extended smoke test.~~ **Done.** Diagnostics, three previously untested
+   paths (relaunch, locked binaries, modal dialog), and a real v1.3.7.2 → v1.3.8 update
+   all verified. This closes the item v1.3.6 shipped broken.
 5. ~~Health check again → updated list to maintainer.~~ **Done** — full solution build with
    warnings-as-errors, `--no-incremental`, plus both test projects.
 6. Go / no-go → commit, tag `v1.3.8`, release.
