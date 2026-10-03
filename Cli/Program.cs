@@ -10,7 +10,7 @@ for (var i = 0; i < args.Length; i++)
         return Usage($"Unexpected argument '{arg}'.");
 
     var name = arg[2..];
-    if (name is "no-move-assets" or "no-dealer" or "defs-only" or "patch-only" or "help")
+    if (name is "no-move-assets" or "no-dealer" or "defs-only" or "patch-only" or "keep-cameras" or "help")
     {
         flags.Add(name);
         continue;
@@ -52,7 +52,8 @@ var settings = new ConversionSettings(
     !flags.Contains("no-move-assets"),
     !flags.Contains("no-dealer"),
     flags.Contains("patch-only"),
-    vehicleType);
+    vehicleType,
+    !flags.Contains("keep-cameras"));
 
 var result = ModConverter.Run(settings, Console.WriteLine, _ => { });
 Console.WriteLine(result.Success
@@ -78,7 +79,7 @@ static int Usage(string? error)
     Console.WriteLine("""
         Usage:
           ats-roadtrip-convert --input <mod.scs> --output <folder> [--dealer <id>] [--reference <mod.scs>]
-                               [--no-move-assets] [--no-dealer] [--patch-only]
+                               [--no-move-assets] [--no-dealer] [--patch-only] [--keep-cameras]
                                [--vehicle-type sedan|hatchback|pickup|van]
           ats-roadtrip-convert --extract <archive.scs> --output <folder> [--defs-only]
         """);

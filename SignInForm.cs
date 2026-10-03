@@ -7,18 +7,6 @@ using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 namespace ATSRoadTripConverter;
-// Settings persistence classes
-/// <summary>
-/// Wraps the sign-in token with Windows DPAPI (CryptProtectData) so it can only be
-/// decrypted by this user account on this machine. P/Invoked straight from crypt32.dll
-/// so the app keeps its zero-dependency footprint - the ProtectedData NuGet package is
-/// not needed for a net8.0-windows target.
-/// </summary>
-// Supporter sign-in state.
-//
-// A GitHub sign-in unlocks the GitHub tier of themes today. The Ko-fi tier is already
-// wired up everywhere except the check itself: when the Ko-fi page goes live, replace
-// the body of HasKoFiAccess with a membership check and nothing else has to change.
 internal sealed class SignInForm : Form
 {
     private readonly FlatButton _primaryButton = new();

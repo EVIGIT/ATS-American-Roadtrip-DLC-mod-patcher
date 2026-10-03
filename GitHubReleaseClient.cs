@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.IO.Compression;
 
 namespace ATSRoadTripConverter;
-
 internal sealed record GitHubReleasePackage(
     string TagName,
     string TemporaryDirectory,

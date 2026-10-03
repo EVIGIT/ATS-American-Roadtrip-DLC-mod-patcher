@@ -2,7 +2,6 @@ using System.IO.Compression;
 using System.Text;
 
 namespace ATSRoadTripConverter;
-
 /// <summary>
 /// Reader for SCS Software's native HashFS (.scs) archives, versions 1 and 2.
 /// Base game files (def.scs, base.scs) and official DLC archives use this format.

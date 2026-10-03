@@ -7,20 +7,10 @@ using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 namespace ATSRoadTripConverter;
-// Settings persistence classes
-/// <summary>
-/// Wraps the sign-in token with Windows DPAPI (CryptProtectData) so it can only be
-/// decrypted by this user account on this machine. P/Invoked straight from crypt32.dll
-/// so the app keeps its zero-dependency footprint - the ProtectedData NuGet package is
-/// not needed for a net8.0-windows target.
-/// </summary>
-// Supporter sign-in state.
-//
-// A GitHub sign-in unlocks the GitHub tier of themes today. The Ko-fi tier is already
-// wired up everywhere except the check itself: when the Ko-fi page goes live, replace
-// the body of HasKoFiAccess with a membership check and nothing else has to change.
 public sealed partial class ConverterForm : Form
 {
+    // The trailing underscore is deliberate: plain "Margin" collides with the inherited
+    // Form.Margin and will not compile (CS0108).
     private const int Margin_ = 24;
     private const int ContentWidth = 812;
     private Panel? _activePage;
@@ -58,6 +48,13 @@ public sealed partial class ConverterForm : Form
     {
         Text = "Move vehicle assets",
         Description = "Moves vehicle/truck models into vehicle/car (full conversion). Always copied in patch mode.",
+        Checked = true
+    };
+
+    private readonly ToggleSwitch _mapCameras = new()
+    {
+        Text = "Use Road Trip car cameras",
+        Description = "Points behind/bumper/interior cameras at the built-in camera.*.car units.",
         Checked = true
     };
 
@@ -328,7 +325,7 @@ public sealed partial class ConverterForm : Form
         var card = AddCard(y, 222, "FILES");
         var inner = ContentWidth - 36;
 
-        AddFieldRow(card, 46, "Input mod", _input, inner, () => BrowseFile(_input, "Choose ATS mod"));
+        AddFieldRow(card, 46, "Input mod", _input, inner, () => BrowseFile(_input, "Choose ATS mod"), ShowRecentInputPicker);
         AddFieldRow(card, 112, "Output folder", _outputFolder, inner, () => BrowseFolder(_outputFolder, "Choose output folder"));
 
         _outputFile.Location = new Point(18, 182);
@@ -342,7 +339,7 @@ public sealed partial class ConverterForm : Form
 
     private int BuildOptionsCard(int y)
     {
-        var card = AddCard(y, 290, "OPTIONS");
+        var card = AddCard(y, 352, "OPTIONS");
         var half = (ContentWidth - 36 - 16) / 2;
 
         AddCaption(card, "Dealer ID", 18, 46);
@@ -382,8 +379,9 @@ public sealed partial class ConverterForm : Form
         PlaceToggle(card, _patchOnly, 18, 156, ContentWidth - 36);
         PlaceToggle(card, _translateDealer, 18, 218, half);
         PlaceToggle(card, _moveVehicleAssets, 18 + half + 16, 218, half);
+        PlaceToggle(card, _mapCameras, 18, 280, ContentWidth - 36);
 
-        return y + 290 + 16;
+        return y + 352 + 16;
     }
 
     private int BuildActionArea(int y)
@@ -500,13 +498,31 @@ public sealed partial class ConverterForm : Form
         return frame;
     }
 
+    private const int BrowseButtonWidth = 90;
+    private const int RecentButtonWidth = 82;
+    private const int FieldButtonGap = 6;
+
     private void AddFieldRow(Control parent, int y, string caption, TextBox box, int innerWidth, Action browse)
     {
+        AddFieldRow(parent, y, caption, box, innerWidth, browse, recent: null);
+    }
+
+    private void AddFieldRow(Control parent, int y, string caption, TextBox box, int innerWidth, Action browse, Action? recent)
+    {
         AddCaption(parent, caption, 18, y);
-        var frame = AddFieldBox(parent, box, 18, y + 22, innerWidth - 100);
+        var buttonsWidth = BrowseButtonWidth + (recent == null ? 0 : RecentButtonWidth + FieldButtonGap);
+        var frame = AddFieldBox(parent, box, 18, y + 22, innerWidth - 16 - buttonsWidth);
         frame.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-        var button = AddButton(parent, "Browse", 18 + innerWidth - 90, y + 22, 90, browse);
-        button.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+
+        var browseX = 18 + innerWidth - BrowseButtonWidth;
+        var browseButton = AddButton(parent, "Browse", browseX, y + 22, BrowseButtonWidth, browse);
+        browseButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+
+        if (recent == null)
+            return;
+
+        var recentButton = AddButton(parent, "Recent", browseX - RecentButtonWidth - FieldButtonGap, y + 22, RecentButtonWidth, recent);
+        recentButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
     }
 
     private static FlatButton AddButton(Control parent, string text, int x, int y, int width, Action onClick)
@@ -529,6 +545,80 @@ public sealed partial class ConverterForm : Form
         toggle.BackColor = Theme.Surface;
         toggle.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         parent.Controls.Add(toggle);
+    }
+
+    // Track C item 1. The remembered folder is the entry point rather than the exact
+    // file: mod folders hold many archives, and the previous file is frequently
+    // renamed or replaced by a re-download. If the exact path still exists it is
+    // preselected; otherwise the list opens with everything in that folder.
+    private void ShowRecentInputPicker()
+    {
+        var lastFolder = Path.GetDirectoryName(SettingsManager.Current.LastInputPath);
+        if (string.IsNullOrWhiteSpace(lastFolder) || !Directory.Exists(lastFolder))
+        {
+            Write("[INFO] No previous mod folder to reopen yet.");
+            return;
+        }
+
+        var archives = new List<string>(Directory.EnumerateFiles(lastFolder, "*.scs"));
+        archives.AddRange(Directory.EnumerateFiles(lastFolder, "*.zip"));
+        archives.Sort(StringComparer.OrdinalIgnoreCase);
+
+        if (archives.Count == 0)
+        {
+            Write($"[INFO] No .scs or .zip archives in {lastFolder}.");
+            using var empty = new FolderBrowserDialog { SelectedPath = lastFolder };
+            if (empty.ShowDialog(this) == DialogResult.OK)
+                _outputFolder.Text = empty.SelectedPath;
+            return;
+        }
+
+        var items = new string[archives.Count];
+        for (var i = 0; i < archives.Count; i++)
+            items[i] = Path.GetFileName(archives[i]);
+
+        using var picker = new Form
+        {
+            Text = "Recent mod",
+            StartPosition = FormStartPosition.CenterParent,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MinimizeBox = false,
+            MaximizeBox = false,
+            ClientSize = new Size(520, 340)
+        };
+
+        var list = new ListBox { Dock = DockStyle.Fill, IntegralHeight = false };
+        list.Items.AddRange(items);
+
+        // Preselect the exact file used last time when it is still there.
+        var previousFile = Path.GetFileName(SettingsManager.Current.LastInputPath);
+        var previousIndex = previousFile == null ? -1 : Array.FindIndex(items, name => name.Equals(previousFile, StringComparison.OrdinalIgnoreCase));
+        list.SelectedIndex = previousIndex >= 0 ? previousIndex : 0;
+        list.DoubleClick += (_, _) => picker.DialogResult = DialogResult.OK;
+        picker.Controls.Add(list);
+
+        var folderButton = new Button
+        {
+            Text = "Open folder...",
+            DialogResult = DialogResult.Cancel,
+            Dock = DockStyle.Bottom,
+            Height = 32
+        };
+        picker.Controls.Add(folderButton);
+
+        using (picker)
+        {
+            if (picker.ShowDialog(this) != DialogResult.OK)
+            {
+                if (picker.DialogResult == DialogResult.Cancel)
+                    BrowseFolder(_outputFolder, "Choose output folder");
+                return;
+            }
+
+            var chosen = Path.Combine(lastFolder, list.SelectedItem?.ToString() ?? "");
+            if (File.Exists(chosen))
+                _input.Text = chosen;
+        }
     }
 
     private void BrowseFile(TextBox box, string title)

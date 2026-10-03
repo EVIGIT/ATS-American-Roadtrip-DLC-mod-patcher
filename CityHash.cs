@@ -1,4 +1,4 @@
-﻿// CityHash64 in C#
+// CityHash64 in C#
 // Copyright (c) 2018, Dario Wouters
 //
 // - cityhash-c copyright notice -

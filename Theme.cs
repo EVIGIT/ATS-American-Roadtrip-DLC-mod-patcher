@@ -7,8 +7,6 @@ using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 namespace ATSRoadTripConverter;
-// Settings persistence classes
-
 internal enum ThemeAccess
 {
     /// <summary>Anyone can use it, signed in or not.</summary>

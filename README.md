@@ -91,7 +91,11 @@ Limitation: HashFS v2 stores textures (`.tobj`/`.dds`) in a packed GPU format. T
 
 `--extract` unpacks any ZIP or HashFS `.scs` file. Add `--defs-only` to extract only manifest.sii, `def/vehicle/...`, and car/Road Trip definitions.
 
-To extract definitions from game archives or mods, use the CLI commands above and pass each archive you want to inspect. The batch helper was removed; the CLI keeps the same extraction functionality without requiring a script file.
+To extract definitions from game archives or mods, use the CLI commands above and pass each archive you want to inspect. A thin helper for that lives in the repository at `scripts/extract-mod.ps1`; it works from any directory, reads the archive straight off disk and writes readable `.sii`/`.sui` text to a scratch folder:
+
+    .\scripts\extract-mod.ps1 -List                   # every .scs in the ATS mod folder
+    .\scripts\extract-mod.ps1 -Mod 'Ford_F250'        # substring match, definitions only
+    .\scripts\extract-mod.ps1 -Mod 'Ford_F250' -Full  # include models/textures
 
 ## Conversion behaviour
 
@@ -102,10 +106,12 @@ The converter:
 - changes definition references from `/def/vehicle/truck/...` to `/def/vehicle/car/...`
 - changes definition references from `/vehicle/truck/...` to `/vehicle/car/...` when asset moving is enabled
 - translates common legacy truck accessory unit names to car equivalents
+- retargets `behind/interior(+oculus)/bumper/window/cabin/wheel/top_camera` to the generic Road Trip `camera.*.car` units (bypass: GUI toggle off, or CLI `--keep-cameras`)
 - translates existing `def/vehicle/truck_dealer` definitions into `def/vehicle/car_dealer/<dealer-id>`
 - preserves the source dealer accessory list rather than inventing one from hard-coded filenames
 - optionally adds missing `car_dealer` framework files from a reference mod
 - validates stale truck references and writes `roadtrip_conversion_report.txt`
+- replaces the definitions a previous conversion of the same mod left behind, so re-patching an already-converted mod produces one definition set per vehicle rather than a second copy of the car
 - repacks the converted mod as `<original>_roadtrip.scs`
 
 ## Reference mod
@@ -160,6 +166,7 @@ In patch mode:
 - All definition files are included (not skipped) to ensure compatibility when multiple mods are patched
 - Vehicle assets from `vehicle/truck/` are copied to `vehicle/car/` with converted path references
 - This ensures textures and models work correctly without requiring asset path changes in the original mod
+- If the input already carries a `def/vehicle/car` tree from an earlier conversion, the new conversion replaces those files by name. The car folder keeps a single definition set instead of one per patch, and no `.truck_source` copies are left in the archive.
 
 Car interiors without `speed_limiter_value` get one based on the selected
 vehicle type (sedan 190 km/h, hatchback 180, pickup 163, van 140).

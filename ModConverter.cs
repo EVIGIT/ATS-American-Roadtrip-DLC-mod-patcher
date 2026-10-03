@@ -3,7 +3,6 @@ using System.Text;
 using System.Text.RegularExpressions;
 
 namespace ATSRoadTripConverter;
-
 /// <summary>Summary of the encrypted content found inside a mod.</summary>
 public sealed record EncryptedModReport(int FileCount, IReadOnlyList<string> Samples)
 {
@@ -124,7 +123,8 @@ public sealed record ConversionSettings(
     bool MoveVehicleAssets,
     bool TranslateDealerDefinitions,
     bool PatchOnly = false,
-    string VehicleType = "pickup")
+    string VehicleType = "pickup",
+    bool MapCamerasToCarUnits = true)
 {
     public static readonly string[] VehicleTypes =
         { "sedan", "hatchback", "pickup", "van" };
@@ -145,6 +145,7 @@ public sealed class ConversionStats
     public int BinaryDefinitionsSkipped;
     public int UnreadableDefinitions;
     public int FilesMovedToCar;
+    public int FilesReplacedFromEarlierPatch;
     public int DealerFilesConverted;
     public int DealerFilesCreatedFromReference;
 }
@@ -174,6 +175,8 @@ public static class ModConverter
 
             var root = FindModRoot(work);
             log($"[INFO] Mod root: {root}");
+
+            RemoveLegacyTruckSourceFiles(root, log);
 
             // Encrypted content cannot be read or converted. Report it clearly here
             // instead of letting it surface as a confusing parse error much later.
@@ -207,6 +210,9 @@ public static class ModConverter
 
             var stats = new ConversionStats();
             var moveAssets = settings.MoveVehicleAssets && !settings.PatchOnly;
+            var mapCameras = settings.MapCamerasToCarUnits;
+            if (!mapCameras)
+                log("[INFO] Camera retargeting is off; original camera unit names are kept.");
             if (settings.PatchOnly && settings.MoveVehicleAssets)
                 log("[INFO] Patch mode: vehicle/truck assets will be copied to the patch, so asset paths are converted.");
 
@@ -222,7 +228,7 @@ public static class ModConverter
             if (Directory.Exists(truckDef))
             {
                 log("-> Migrating def/vehicle/truck to def/vehicle/car...");
-                MergeTree(truckDef, carDef, log);
+                MergeTree(truckDef, carDef, log, stats);
                 Directory.Delete(truckDef, true);
             }
             else if (Directory.Exists(carDef))
@@ -245,7 +251,7 @@ public static class ModConverter
             progress(35);
 
             log("-> Converting SII/SUI definitions...");
-            ConvertDefinitionFiles(root, stats, log, moveAssets, settings.VehicleType, settings.PatchOnly);
+            ConvertDefinitionFiles(root, stats, log, moveAssets, settings.VehicleType, settings.PatchOnly, mapCameras);
 
             progress(55);
 
@@ -494,12 +500,13 @@ public static class ModConverter
         Action<string> log,
         bool moveVehicleAssets,
         string vehicleType,
-        bool isPatchMode = false)
+        bool isPatchMode = false,
+        bool mapCamerasToCarUnits = true)
     {
         foreach (var file in Directory.EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
                      .Where(IsTextDefinition))
         {
-            ConvertDefinitionFile(file, stats, log, moveVehicleAssets, vehicleType, isPatchMode);
+            ConvertDefinitionFile(file, stats, log, moveVehicleAssets, vehicleType, isPatchMode, mapCamerasToCarUnits);
         }
     }
 
@@ -509,7 +516,8 @@ public static class ModConverter
         Action<string> log,
         bool moveVehicleAssets,
         string vehicleType,
-        bool isPatchMode = false)
+        bool isPatchMode = false,
+        bool mapCamerasToCarUnits = true)
     {
         byte[] bytes;
         try
@@ -563,6 +571,13 @@ public static class ModConverter
         }
 
         var normalizedVehicleType = (vehicleType ?? "pickup").Trim().ToLowerInvariant();
+
+        // Road Trip ships generic camera.*.car units in the base game
+        // (def/camera/units/*_car.sui), so truck-era mods can't reuse their own
+        // bespoke names when loaded as a car: behind/wheel/top/bumper/cabin,
+        // window/interior (+oculus) are remapped to those stable units.
+        if (mapCamerasToCarUnits && isVehicleDefinitionFile && IsCarDataFile(file))
+            text = MapCamerasToCarUnits(text);
 
         if (isVehicleDefinitionFile && IsCarDataFile(file))
             text = AddCarDataAttributes(text, normalizedVehicleType);
@@ -770,7 +785,7 @@ public static class ModConverter
 
             if (Directory.Exists(destination))
             {
-                MergeTree(sourceDirectory, destination, log);
+                MergeTree(sourceDirectory, destination, log, stats);
                 Directory.Delete(sourceDirectory, true);
             }
             else
@@ -788,14 +803,29 @@ public static class ModConverter
         }
         else
         {
-            log("[INFO] Some vehicle/truck asset folders were left untouched because of collisions.");
+            log("[INFO] vehicle/truck still contains entries after migration; the folder was left in place.");
         }
     }
 
+    /// <summary>
+    /// Merges a legacy <c>vehicle/truck</c> tree into the Road Trip <c>vehicle/car</c> tree.
+    /// <para>
+    /// The merge is scoped by name: files only ever land inside the car folder that carries
+    /// the same vehicle name as the truck folder being converted, so another mod's car tree
+    /// is never touched. A colliding path therefore belongs to an earlier conversion of
+    /// <b>this same mod</b>, and the freshly converted file replaces it.
+    /// </para>
+    /// <para>
+    /// Older builds instead kept the previous car file and parked the incoming one beside it
+    /// as <c>&lt;name&gt;.truck_source</c>. That left two definitions for one vehicle in the
+    /// packed archive, so re-patching a mod duplicated the car from the earlier patch.
+    /// </para>
+    /// </summary>
     private static void MergeTree(
         string source,
         string destination,
-        Action<string> log)
+        Action<string> log,
+        ConversionStats stats)
     {
         Directory.CreateDirectory(destination);
 
@@ -815,14 +845,36 @@ public static class ModConverter
 
             if (File.Exists(target))
             {
-                var collision = target + ".truck_source";
-                File.Copy(file, collision, true);
-                log($"[COLLISION] Existing car file preserved as {collision}");
+                // Same vehicle folder and same file name: this is the same mod converted
+                // again, so the new definition set wins and the stale one is dropped.
+                File.Move(file, target, overwrite: true);
+                stats.FilesReplacedFromEarlierPatch++;
+                log($"[REPLACE] {relative.Replace('\\', '/')} updated over the copy left by an earlier patch");
             }
             else
             {
                 File.Move(file, target);
             }
+        }
+    }
+
+    /// <summary>
+    /// Deletes <c>.truck_source</c> leftovers written by older converter builds. They were
+    /// parked beside the real definition on a collision and then packed into the archive,
+    /// where the game saw them as stray files next to the converted car.
+    /// </summary>
+    private static void RemoveLegacyTruckSourceFiles(string root, Action<string> log)
+    {
+        var leftovers = Directory
+            .EnumerateFiles(root, "*.truck_source", SearchOption.AllDirectories)
+            .ToList();
+
+        foreach (var file in leftovers)
+            File.Delete(file);
+
+        if (leftovers.Count > 0)
+        {
+            log($"[INFO] Removed {leftovers.Count} legacy .truck_source leftover file(s) from an earlier conversion.");
         }
     }
 
@@ -921,6 +973,7 @@ public static class ModConverter
         report.AppendLine($"Binary definitions skipped: {stats.BinaryDefinitionsSkipped}");
         report.AppendLine($"Unreadable definitions: {stats.UnreadableDefinitions}");
         report.AppendLine($"Vehicle asset directories moved: {stats.FilesMovedToCar}");
+        report.AppendLine($"Files replaced from an earlier patch: {stats.FilesReplacedFromEarlierPatch}");
         report.AppendLine($"Dealer files converted: {stats.DealerFilesConverted}");
         report.AppendLine($"Reference dealer files added: {stats.DealerFilesCreatedFromReference}");
         report.AppendLine($"Validation issues: {issues.Count}");
@@ -1075,6 +1128,66 @@ public static class ModConverter
             insert.Append(newline).Append("\ttags[]: \"").Append(vehicleType).Append('"');
 
         return insert.Length == 0 ? text : text.Insert(insertAt, insert.ToString());
+    }
+
+    // Maps the per-slot camera references in a car data.sii onto the generic
+    // Road Trip car camera units shipped with the base game. Only the eight
+    // known car views are rewritten; anything already pointing at *.car,
+    // boutique dealer suffixes and non-vehicle cameras are left alone.
+    //
+    // accessory_truck_data documents fourteen camera fields in total. The six
+    // not listed below are deliberately left unmapped, because they are not
+    // per-vehicle views and have no *.car counterpart:
+    //   top_fixed_camera, predefined_tv_camera, side_camera  - documented as "typically unused"
+    //   tv_camera, wander_camera, debug_camera                 - global units
+    //     (camera.tv.basic, camera.wander, camera.debug) that the official
+    //     Road Trip cars also reference unchanged, so rewriting them would
+    //     point at units that do not exist.
+    // The reverse gear has no per-vehicle camera to configure. accessory_truck_data
+    // documents no reverse_camera field, and the base game ships no reverse camera unit
+    // (def/camera/units contains 18 units, none of them reverse-related). What looks
+    // related are two unrelated cvars: s_reverse_enabled is the reverse-gear *beep*,
+    // and g_cam_steering_reverse tunes interior camera sway while reversing. Neither
+    // selects a camera, and neither is something a patch can or should set.
+    public static string MapCamerasToCarUnits(string text)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["behind_camera"] = "camera.behind.car",
+            ["interior_camera"] = "camera.interior.car",
+            ["interior_camera_oculus"] = "camera.interior.car.oculus",
+            ["bumper_camera"] = "camera.bumper.car",
+            ["window_camera"] = "camera.window.car",
+            ["cabin_camera"] = "camera.cabin.car",
+            ["wheel_camera"] = "camera.wheel.car",
+            ["top_camera"] = "camera.top.car",
+        };
+
+        foreach (var slot in map)
+        {
+            text = Regex.Replace(
+                text,
+                @"(?m)^(?<indent>[ \t]*)(?<slot>" + slot.Key + @")(?<sep>\s*:\s*)(?<value>[^\r\n#]+)",
+                match =>
+                {
+                    var value = match.Groups["value"].Value.Trim();
+
+                    // Already a stable car unit (e.g. camera.bumper.car or a
+                    // DLC-backed camera.behind.suv): never clobber it.
+                    if (value.EndsWith(".car", StringComparison.OrdinalIgnoreCase) ||
+                        value.EndsWith(".car.oculus", StringComparison.OrdinalIgnoreCase) ||
+                        value.EndsWith(".suv", StringComparison.OrdinalIgnoreCase))
+                        return match.Value;
+
+                    return match.Groups["indent"].Value +
+                           match.Groups["slot"].Value +
+                           match.Groups["sep"].Value +
+                           slot.Value;
+                },
+                RegexOptions.IgnoreCase);
+        }
+
+        return text;
     }
 
     private static bool IsBinaryOrEncryptedSii(byte[] bytes)

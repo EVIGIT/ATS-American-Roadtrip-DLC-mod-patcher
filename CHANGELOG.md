@@ -1,14 +1,25 @@
 # ATS American Roadtrip Car Patcher
 
-Current App Version: v1.3.7.1
+Current App Version: v1.3.8
 
-## Unreleased
+## v1.3.8
 
 ### Added
+- Camera retargeting: converted `def/vehicle/car/*/data.sii` files now point the eight known camera slots (`behind`, `interior` + oculus, `bumper`, `window`, `cabin`, `wheel`, `top`) at the generic Road Trip units shipped in the base game (`camera.*.car`, e.g. `camera.bumper.car`). New GUI toggle "Use Road Trip car cameras" (on by default); CLI opt-out with `--keep-cameras`. Already-stable `*.car` / `*.suv` (DLC) units are never overwritten.
+- A "Recent" button beside "Browse" on the input row reopens the folder used for the previous conversion and lists the `.scs`/`.zip` archives in it, preselecting the last one when it still exists. The folder is remembered rather than the filename, because mod archives get renamed or re-downloaded often enough that a remembered path would go stale immediately.
+- A failed conversion now logs `[INFO] Partial work folder kept for inspection: <path>` so the output folder holding partial work can be found without guessing. The path is remembered for the next run even when "auto-save settings" is off.
 
 ### Fixed
+- Re-patching a mod that already contains a previous conversion no longer duplicates the car. The freshly converted definitions now replace the copies the earlier patch left behind, instead of being parked beside them as .truck_source files - which left two definitions for one vehicle inside the packed archive.
+- Legacy .truck_source leftovers written by older builds are deleted during conversion instead of being packed into the output archive.
+
+## v1.3.7.2
+
+### Fixed
+- The local updater reports *why* a copy failed instead of only "Robocopy exit code 16". The helper script ran under `$ErrorActionPreference = 'Stop'` while piping robocopy's output to `Out-Null`; robocopy writes failures on stderr, so those errors could abort the copy, and the discarded output removed the only diagnostic. Robocopy output is now merged into the updater log, `$ErrorActionPreference` is relaxed around the robocopy call so its native exit code survives, and both the build and install folders are validated before robocopy runs.
 
 ### Changed
+- The updater helper log now records the file count being copied, both folder paths, and the exit code of every retry attempt.
 
 ## v1.3.7.1
 

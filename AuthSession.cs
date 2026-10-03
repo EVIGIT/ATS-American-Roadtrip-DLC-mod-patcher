@@ -7,7 +7,6 @@ using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 namespace ATSRoadTripConverter;
-// Settings persistence classes
 internal static class LocalSecretProtector
 {
     private const int CryptprotectUiForbidden = 0x1;

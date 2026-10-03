@@ -2,7 +2,6 @@ using System.IO.Compression;
 using System.Text;
 
 namespace ATSRoadTripConverter;
-
 internal static class ScsArchive
 {
     private const uint LocalHeader = 0x04034b50;

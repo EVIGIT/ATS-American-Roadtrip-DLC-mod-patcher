@@ -7,8 +7,6 @@ using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 namespace ATSRoadTripConverter;
-// Settings persistence classes
-
 public sealed class VehicleTypeCustom
 {
     public string Name { get; set; } = "";
@@ -24,6 +22,8 @@ public sealed class AppSettings
     public string DefaultDealerId { get; set; } = "volvo";
     public string DefaultVehicleType { get; set; } = "pickup";
     public string DefaultOutputFolder { get; set; } = "";
+    public string LastInputPath { get; set; } = "";
+    public string LastWorkFolder { get; set; } = "";
     public string AccentColor { get; set; } = "#FF8A3D";
     public float FontSize { get; set; } = 9.5f;
     public string FontFamily { get; set; } = "Segoe UI";
@@ -123,7 +123,8 @@ public static class SettingsManager
         }
         catch (Exception ex)
         {
-            // Silently fail - settings are not critical
+            // Settings are not critical: a failed save must never interrupt a conversion.
+            // Kept behind DEBUG so no debug hook ships in a release build.
             System.Diagnostics.Debug.WriteLine($"Failed to save settings: {ex.Message}");
         }
     }

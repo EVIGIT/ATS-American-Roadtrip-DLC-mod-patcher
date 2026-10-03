@@ -7,18 +7,6 @@ using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 namespace ATSRoadTripConverter;
-// Settings persistence classes
-/// <summary>
-/// Wraps the sign-in token with Windows DPAPI (CryptProtectData) so it can only be
-/// decrypted by this user account on this machine. P/Invoked straight from crypt32.dll
-/// so the app keeps its zero-dependency footprint - the ProtectedData NuGet package is
-/// not needed for a net8.0-windows target.
-/// </summary>
-// Supporter sign-in state.
-//
-// A GitHub sign-in unlocks the GitHub tier of themes today. The Ko-fi tier is already
-// wired up everywhere except the check itself: when the Ko-fi page goes live, replace
-// the body of HasKoFiAccess with a membership check and nothing else has to change.
 public sealed partial class ConverterForm : Form
 {
     private async Task ConvertAsync()
@@ -80,7 +68,8 @@ public sealed partial class ConverterForm : Form
                 _moveVehicleAssets.Checked,
                 _translateDealer.Checked,
                 _patchOnly.Checked,
-                VehicleTypeDisplayToId(_vehicleType.SelectedItem as string));
+                VehicleTypeDisplayToId(_vehicleType.SelectedItem as string),
+                _mapCameras.Checked);
 
             var result = await Task.Run(() =>
                 ModConverter.Run(
@@ -112,6 +101,8 @@ public sealed partial class ConverterForm : Form
                 SettingsManager.Current.DefaultDealerId = _dealerId.Text.Trim();
                 SettingsManager.Current.DefaultOutputFolder = _outputFolder.Text.Trim();
                 SettingsManager.Current.DefaultVehicleType = VehicleTypeDisplayToId(_vehicleType.SelectedItem as string);
+                SettingsManager.Current.LastInputPath = _input.Text.Trim();
+                SettingsManager.Current.LastWorkFolder = _outputFolder.Text.Trim();
                 SettingsManager.Save();
             }
         }
@@ -119,6 +110,22 @@ public sealed partial class ConverterForm : Form
         {
             Write($"[FATAL] {ex.Message}");
             Write("[FATAL] No converted file was produced.");
+
+            // Track C item 2: a failed run leaves the output folder holding partial
+            // work. That is usually what someone wants when diagnosing, so say where
+            // it is instead of leaving them to guess. Remembers the folder for the
+            // next run regardless of AutoSaveSettings, which is a UI preference and
+            // not a statement about whether this path is still worth keeping.
+            if (Directory.Exists(_outputFolder.Text))
+            {
+                Write($"[INFO] Partial work folder kept for inspection: {_outputFolder.Text}");
+                if (!string.Equals(SettingsManager.Current.LastWorkFolder, _outputFolder.Text.Trim(), StringComparison.Ordinal))
+                {
+                    SettingsManager.Current.LastWorkFolder = _outputFolder.Text.Trim();
+                    SettingsManager.Save();
+                }
+            }
+
             SetStatus("Failed", Theme.Error);
         }
         finally
