@@ -1,5 +1,4 @@
 namespace ATSRoadTripConverter;
-
 internal sealed record LocalUpdatePlan(
     string SourceDirectory,
     string TargetDirectory,
@@ -119,17 +118,53 @@ try {
         # Give Windows a moment to release the handles the app was holding.
         Start-Sleep -Milliseconds 800
     }
-    # Retry: the first attempt can still trip over an antivirus scanner or indexer
-    # holding a file the app released a moment ago.
+    # Fail with a readable message before robocopy gets a chance to report exit 16 with no
+    # context. Exit 16 on its own told us nothing about which path or argument was wrong.
+    if ([string]::IsNullOrWhiteSpace($sourcePath)) {
+        throw "The build folder path is empty."
+    }
+    if ([string]::IsNullOrWhiteSpace($targetPath)) {
+        throw "The installation folder path is empty."
+    }
+    if (-not (Test-Path -LiteralPath $sourcePath -PathType Container)) {
+        throw "The build folder '$sourcePath' does not exist."
+    }
+    if (-not (Test-Path -LiteralPath $targetPath -PathType Container)) {
+        throw "The installation folder '$targetPath' does not exist."
+    }
+    $sourceFileCount = @(Get-ChildItem -LiteralPath $sourcePath -Recurse -File -Force).Count
+    Add-Content -LiteralPath $logPath -Value "Copying $sourceFileCount file(s) from '$sourcePath' to '$targetPath' at $(Get-Date -Format o)" -Encoding utf8
+
+    # Retry a bounded number of times with a short backoff. The first attempt can still trip
+    # over an antivirus scanner or indexer holding a file the app released a moment ago.
     $exitCode = 1
     for ($attempt = 1; $attempt -le 5; $attempt++) {
-        & robocopy.exe $sourcePath $targetPath /E /COPY:DAT /R:2 /W:1 | Out-Null
+        # Robocopy reports progress on stdout and failures on stderr. The script runs under
+        # $ErrorActionPreference = 'Stop', which can turn that stderr into a terminating error
+        # and kill the copy before robocopy's exit code is ever read. Merging the streams and
+        # temporarily relaxing the preference keeps the native exit code intact.
+        $previousPreference = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            $robocopyOutput = (& robocopy.exe $sourcePath $targetPath /E /COPY:DAT /R:2 /W:1 /NP 2>&1 | Out-String).Trim()
+        }
+        finally {
+            $ErrorActionPreference = $previousPreference
+        }
         $exitCode = $LASTEXITCODE
+        Add-Content -LiteralPath $logPath -Value "Robocopy attempt $attempt/5 exited with code $exitCode at $(Get-Date -Format o)" -Encoding utf8
+        if ($robocopyOutput) {
+            Add-Content -LiteralPath $logPath -Value $robocopyOutput -Encoding utf8
+        }
         if ($exitCode -lt 8) { break }
+        # Exit 16 and above are structural: bad arguments, an unusable source, or a destination
+        # that cannot be created. Retrying those just delays the same failure by a few seconds,
+        # so stop immediately and let the log say why.
+        if ($exitCode -ge 16) { break }
         Start-Sleep -Milliseconds 800
     }
     if ($exitCode -ge 8) {
-        throw "Copy failed with Robocopy exit code $exitCode."
+        throw "Copy failed with Robocopy exit code $exitCode. Full Robocopy output is in the log at $logPath."
     }
     Add-Content -LiteralPath $logPath -Value "Files copied at $(Get-Date -Format o)" -Encoding utf8
     if ($relaunchApp) {

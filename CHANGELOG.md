@@ -1,14 +1,15 @@
 # ATS American Roadtrip Car Patcher
 
-Current App Version: v1.3.7.1
+Current App Version: v1.3.7.2
 
-## Unreleased
-
-### Added
+## v1.3.7.2
 
 ### Fixed
+- The local updater reports *why* a copy failed instead of only "Robocopy exit code 16". The helper script ran under `$ErrorActionPreference = 'Stop'` while piping robocopy's output to `Out-Null`; robocopy writes failures on stderr, so those errors could abort the copy, and the discarded output removed the only diagnostic. Robocopy output is now merged into the updater log, `$ErrorActionPreference` is relaxed around the robocopy call so its native exit code survives, and both the build and install folders are validated before robocopy runs. Exit codes of 16 and above are treated as structural and are not retried.
 
 ### Changed
+- The updater helper log now records the file count being copied, both folder paths, and the exit code of every retry attempt.
+- `LocalUpdaterSmokeTest` now covers `waitForAppExit`, the path guards, and a readable error path. That coverage is what v1.3.6 lacked when the updater shipped broken.
 
 ## v1.3.7.1
 
