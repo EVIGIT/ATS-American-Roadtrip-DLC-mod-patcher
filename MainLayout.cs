@@ -24,6 +24,63 @@ public static class MainLayout
     public const int OptionsCardHeight = 416;
     public const int ActionAreaHeight = 86;
 
+    /// <summary>Height of one options row: the full-width patch switch, or a side-by-side pair.</summary>
+    public const int ToggleRowHeight = 62;
+
+    /// <summary>
+    /// Non-text chrome in a toggle row: the 2px title inset, the 22px gap before the description
+    /// and the 4px tail below it. <c>ToggleSwitch.OnPaint</c> derives the description rectangle as
+    /// <c>Height - 28</c>, so a row is exactly this constant plus its measured description height.
+    /// </summary>
+    public const int ToggleRowChrome = 28;
+
+    /// <summary>Y of the first options row inside the card: the full-width patch switch.</summary>
+    public const int FirstToggleRowY = 156;
+
+    /// <summary>
+    /// Number of options rows: the full-width patch switch, then three side-by-side pairs.
+    /// Rows are stacked from <see cref="FirstToggleRowY"/> at <see cref="ToggleRowHeight"/> pitch,
+    /// which is why the pairs originally sat at 218, 280 and 342.
+    /// </summary>
+    public const int ToggleRowCount = 4;
+
+    /// <summary>Slack left under the last options row inside the card.</summary>
+    public const int OptionsCardBottomPadding = 12;
+
+    /// <summary>
+    /// The row height a set of toggles needs so no description is clipped.
+    /// <para>
+    /// The row height used to be the constant <see cref="ToggleRowHeight"/>, which is only correct
+    /// at the default font size. <c>Theme.UiFont</c> scales every font by the user's Font Size
+    /// setting (8-16) while control sizes stay fixed, so at 11 and above the two-line descriptions
+    /// needed more than 62px and <c>TextRenderer</c> silently ellipsised them. Measured against the
+    /// real strings, 11 needs 65px, 12 needs 68, and 16 needs 108.
+    /// </para>
+    /// <para>
+    /// This only does arithmetic. Measuring text needs a <c>Graphics</c>, which is WinForms, so the
+    /// measured height is passed in and the layout decision stays testable without a display.
+    /// </para>
+    /// </summary>
+    public static int RequiredToggleRowHeight(int measuredDescriptionHeight) =>
+        Math.Max(ToggleRowHeight, measuredDescriptionHeight + ToggleRowChrome);
+
+    /// <summary>
+    /// Options card height for a given row height. The rows are stacked at
+    /// <see cref="FirstToggleRowY"/> with the row height as the pitch, so the card grows with them.
+    /// At the default <see cref="ToggleRowHeight"/> this returns exactly
+    /// <see cref="OptionsCardHeight"/>, which is asserted rather than assumed.
+    /// </summary>
+    public static int OptionsCardHeightFor(int toggleRowHeight) =>
+        FirstToggleRowY + ToggleRowCount * toggleRowHeight + OptionsCardBottomPadding;
+
+    /// <summary>Everything above the log card, for a given options card height.</summary>
+    public static int ContentAboveLogFor(int optionsCardHeight) =>
+        HeaderHeight + FilesCardHeight + CardGap + optionsCardHeight + CardGap + ActionAreaHeight;
+
+    /// <summary>The height the window opens at, for a given options card height.</summary>
+    public static int DefaultWindowHeightFor(int optionsCardHeight) =>
+        ContentAboveLogFor(optionsCardHeight) + MainLayoutMargin + PreferredLogCardHeight;
+
     /// <summary>The log may shrink to this, but never past it.</summary>
     public const int MinimumLogCardHeight = 170;
 

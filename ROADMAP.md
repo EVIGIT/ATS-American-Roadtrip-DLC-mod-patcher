@@ -1,8 +1,8 @@
 # ATS American Roadtrip Car Patcher — roadmap
 
-Status: **v1.3.9 released** (tagged and published). **v1.3.9.1 and v1.4 are open.** v1.3.9
-shipped the authentication removal, launch page, About tab, layout fixes, dealer branding and
-badges, the car-duplication fix, the `invalid_vehicle` fix, and the transparent-badge work.
+Status: **v1.3.9 released** (tagged and published), plus two post-release corrections landed on
+top: the 1080p layout check, which found a real font-scaling clipping bug and fixed it, and a
+correction to how the duplication bug is recorded. **v1.3.9.1 and v1.4 are open.**
 
 The badge work in v1.3.9 was verified at the file level, not visually: the DXT1 → DXT5
 conversion is byte-checked and provably lossless to the artwork, but nobody has yet seen the
@@ -1740,11 +1740,21 @@ three are closed and two are carried into v1.3.9.1 / v1.4.
    "Definitions-only patch (known bug)", selecting it raises a warning before anything is written,
    the README documents it, and five checks pin the default so it cannot quietly flip back. The
    remaining in-game confirmation is folded into the v1.3.9.1 scope below.
-2. **Confirm the car-duplication fix in game — CARRIED FORWARD, now blocking.** Namespaces now
-   come from the input file name, so they provably differ per mod, but "provably different names"
-   is not "no duplication". Load a save with two same-brand cars (both Cadillacs, or the two
-   Fords) plus the S90 and check all three appear and drive. This can only be tested in **full
-   conversion** mode until the patch-mode crash is fixed.
+2. **Confirm the car-duplication fix in game — CLOSED, and the reproduction was cross-brand.**
+   The maintainer's original bug report was **two cars of *different* brands**: the Volvo S90 and
+   the BMW M5 duplicated each other. That is the case to remember, because it does **not** match
+   the dealer-ID collision theory this file spent a page on. Two Cadillacs are both
+   `truck_dealer/cadillac`, so a dealer-derived namespace genuinely would have collided for them —
+   but `volvo` and `bmw` would never have collided with each other. A cross-brand duplication
+   therefore points somewhere else entirely, most likely to the un-namespaced `_nameless.` units
+   both mods emitted before v1.3.9, which is what the input-file-name namespace actually fixed.
+
+   The user confirms it no longer reproduces. Re-tested by loading the S90 alongside the M5.
+
+   Left standing as hardening, not as a known bug: an automated end-to-end sweep converting two
+   real same-brand mods and asserting the archives declare no common `_nameless` unit. That is
+   v1.4 item 6, and it would now catch the cross-brand case too rather than relying on the reason
+   for the fix being right.
 3. **Confirm the dealership logo binding from `base.scs` — ANSWERED IN GAME, and it moved.** The
    original worry was that `material/ui/brand_logo/<brand>.mat` might be the wrong path or that
    the bare-name `.tobj` reference might not resolve. In-game testing showed the opposite failure:
@@ -1752,10 +1762,23 @@ three are closed and two are carried into v1.3.9.1 / v1.4.
    `material/ui/car_brand_logo/`, which a truck mod never ships. Both folders are now written on
    every conversion, and both must be transparent because the `.tobj` holds an absolute path back
    into `brand_logo/`. No further machinery is needed for the binding itself.
-4. **Verify the 1080p layout by eye — STILL OPEN.** The options card was repacked into pairs to
-   keep the default window at 1080px rather than 1150px. The arithmetic is asserted by
-   `SettingsMigrationVerify`, but nobody has actually looked at the two new switches side by
-   side at half width — a long `Description` may wrap badly in a pair.
+4. **Verify the 1080p layout by eye — DONE, and it found a real bug.** The options card was
+   repacked into pairs to keep the default window at 1080px rather than 1150px, and the arithmetic
+   was already asserted. Checking the *text* rather than the arithmetic turned up something the
+   arithmetic could not see: the paired rows were a fixed 62px, while `Theme.UiFont` scales every
+   font by the user's Font Size setting (8–16) and control sizes stay fixed. Measured against the
+   real description strings at the real 322px text width, font size 11 needs 65px, 12 needs 68, and
+   16 needs 108 — so at 11 and above **all six** option descriptions were silently ellipsised.
+   `TextRenderer` truncates with "..." rather than throwing, which is why nothing ever looked
+   broken and nothing was ever reported.
+
+   Fixed by measuring: `ToggleSwitch.RequiredHeight` measures the wrapped text with the same flags
+   `OnPaint` uses, `MainLayout` turns that into a row height and a card height, and the window's
+   opening height follows. At the default font size the measured path reproduces 62 / 416 / 1080
+   exactly, so **1080p is unchanged for anyone who has not touched the setting** — that equivalence
+   is asserted, not assumed. Ten new checks in `SettingsMigrationVerify` pin the floor, the growth
+   at 11 and 16, monotonicity, and that the last row still ends inside the card.
+
 5. **Final repository review, commit and tag — CLOSED.** The whole v1.3.9 body of work is
    committed and tagged: authentication removal, launch page, About tab, layout fixes, dealer
    branding and badges, both namespace fixes, `MainLayout.cs`, `ReleaseNotes.cs`,

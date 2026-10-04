@@ -2,6 +2,15 @@
 
 Current App Version: v1.3.9
 
+## v1.3.9.1
+
+### Fixed
+- **Option descriptions were cut off at larger font sizes.** The options rows were a fixed 62px, but the Font Size setting scales every font from 8 to 16 while control sizes stay put. Measured against the real description strings at the real 322px text width, font size 11 needs 65px, 12 needs 68, and 16 needs 108 — so at 11 and above all six option descriptions were truncated. It was silent because `TextRenderer` ellipsises with "..." instead of throwing, so nothing looked broken. The row height is now measured from the wrapped text and the options card grows to match, with the window following.
+- The default is unchanged: at the default font size the measured path reproduces the previous 62px rows, 416px card and 1080px window exactly, so 1080p is unaffected for anyone who has not changed the setting.
+
+### Changed
+- SettingsMigrationVerify grew from 88 to 100 checks, covering the measured row height: that it reproduces the hand-verified card and window heights at the default font size, that it grows rather than clips at font sizes 11 and 16, that it never shrinks as the text grows, and that the last row still ends inside the card.
+
 ## v1.3.9
 
 ### Fixed

@@ -223,7 +223,7 @@ Three headless suites, none of which need a display:
 | Suite | Checks | Covers |
 | --- | --- | --- |
 | `Tests/ModConverterVerify` | 142 | end-to-end conversion, dealership binding, badge transparency, camera retargeting, re-patching, reference merging, truck→car migration |
-| `Tests/SettingsMigrationVerify` | 88 | settings schema versioning and migration, window layout arithmetic, launch-page changelog parsing |
+| `Tests/SettingsMigrationVerify` | 100 | settings schema versioning and migration, window layout arithmetic including the font-scaled option rows, launch-page changelog parsing |
 | `Tests/LocalUpdaterSmokeTest` | smoke | the updater's folder validation and copy script, using temp folders only |
 
     dotnet run --project Tests/ModConverterVerify/ModConverterVerify.csproj -c Release
@@ -243,7 +243,7 @@ The UI was split out of `Program.cs` in v1.3.7. `Program.cs` is now just the ent
 | `Program.cs` | entry point |
 | `ConverterForm.Layout.cs` | main window construction and layout |
 | `ConverterForm.Conversion.cs` | conversion, logging, settings UI |
-| `MainLayout.cs` | the window's vertical budget, as testable arithmetic |
+| `MainLayout.cs` | the window's vertical budget and the measured option-row heights, as testable arithmetic |
 | `LaunchForm.cs` | the startup quick start / "what's new" window |
 | `ReleaseNotes.cs` | parses `CHANGELOG.md` for the launch page |
 | `MainPage.cs` | the restorable page enum and its tolerant JSON converter |

@@ -287,6 +287,81 @@ Check(
         == MainLayout.PreferredLogCardHeight,
     "at the default height the log gets its preferred size");
 
+// --- Options rows grow with the font size ------------------------------------------
+// The 1080p check that was outstanding in v1.3.9 turned up a real defect rather than a clean
+// bill of health. The options rows were a fixed 62px, but Theme.UiFont scales every font by the
+// user's Font Size setting (8-16) while control sizes stay put, so at 11 and above the two-line
+// descriptions needed more room and TextRenderer silently ellipsised them - a truncated "..."
+// rather than anything that looks broken. Measured against the real strings: 11 needs 65px,
+// 12 needs 68, 16 needs 108.
+//
+// The fix measures the text and grows the card. What matters here is that at the DEFAULT font
+// size the measured path reproduces the hand-verified numbers exactly, so the fix is a no-op for
+// everyone who has not touched the setting. That equivalence is asserted rather than assumed:
+// RequiredToggleRowHeight floors at the old constant, and OptionsCardHeightFor(62) must be 416.
+
+Check(
+    MainLayout.OptionsCardHeightFor(MainLayout.ToggleRowHeight) == MainLayout.OptionsCardHeight,
+    "the measured card height reproduces the 416px constant at the default row height");
+
+Check(
+    MainLayout.DefaultWindowHeightFor(MainLayout.OptionsCardHeight) == MainLayout.DefaultWindowHeight,
+    "the measured window height reproduces the 1080px default at the default card height");
+
+Check(
+    MainLayout.ContentAboveLogFor(MainLayout.OptionsCardHeight) == MainLayout.ContentAboveLog,
+    "the measured content budget reproduces 856px at the default card height");
+
+// The floor is what keeps the default unchanged: at the default font size the measured
+// description is 32px, so 32 + 28 = 60 and the row stays at its 62px floor.
+Check(
+    MainLayout.RequiredToggleRowHeight(32) == MainLayout.ToggleRowHeight,
+    "a 32px description keeps the 62px default row (32 + 28 = 60, under the floor)");
+
+// A taller description must grow the row, never clip it. 37px is what font size 11 measures.
+Check(
+    MainLayout.RequiredToggleRowHeight(37) == 65,
+    "a 37px description grows the row to 65px instead of clipping (font size 11)");
+
+Check(
+    MainLayout.RequiredToggleRowHeight(80) == 108,
+    "an 80px description grows the row to 108px (font size 16)");
+
+// Monotonic: a taller description can never produce a shorter row, or the layout would jitter
+// as the font setting changed.
+var heights = new[] { 0, 20, 34, 40, 55, 80, 200 }
+    .Select(MainLayout.RequiredToggleRowHeight)
+    .ToArray();
+Check(
+    heights.Zip(heights.Skip(1), (a, b) => b >= a).All(ok => ok),
+    "the required row height never shrinks as the description grows");
+
+// The card must grow with the rows, and by the right amount: one row taller means one row pitch
+// taller, across all four rows.
+Check(
+    MainLayout.OptionsCardHeightFor(65) - MainLayout.OptionsCardHeightFor(62) == 4 * 3,
+    "a 3px taller row grows the card by exactly one pitch across all four rows");
+
+// The four rows plus the first-row offset and the bottom padding must account for the whole card,
+// which is what stops the last row being drawn outside it.
+Check(
+    MainLayout.FirstToggleRowY + MainLayout.ToggleRowCount * MainLayout.ToggleRowHeight
+        + MainLayout.OptionsCardBottomPadding == MainLayout.OptionsCardHeight,
+    "the rows and the padding add up to the full options card height");
+
+// The last row must sit inside the card, with the padding to spare. This is the actual
+// clip-the-bottom-of-the-last-switch failure, stated as arithmetic.
+Check(
+    MainLayout.FirstToggleRowY + (MainLayout.ToggleRowCount - 1) * MainLayout.ToggleRowHeight
+        + MainLayout.ToggleRowHeight <= MainLayout.OptionsCardHeight,
+    "the last options row ends inside the card, not past its bottom edge");
+
+// The window must still fit a 1080p desktop at the default font size, which is the whole point
+// of measuring rather than adding rows.
+Check(
+    MainLayout.DefaultWindowHeightFor(MainLayout.OptionsCardHeight) <= 1080,
+    "at the default font size the window still fits a 1080px desktop without scrolling");
+
 // A short window must never squeeze the log below its floor.
 Check(
     MainLayout.LogCardHeight(700, MainLayout.ContentAboveLog) == MainLayout.MinimumLogCardHeight,

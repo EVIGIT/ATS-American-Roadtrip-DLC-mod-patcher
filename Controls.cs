@@ -309,6 +309,38 @@ internal sealed class ToggleSwitch : Control
 
     public string Description { get; set; } = "";
 
+    /// <summary>
+    /// The row height this toggle needs so neither its title nor its description is clipped.
+    /// <para>
+    /// Measured with the same font and word-wrap flags <see cref="OnPaint"/> draws with, because
+    /// <see cref="TextRenderer"/> ellipsises silently: an over-tall row does not throw, it just
+    /// truncates the text with "..." and nothing looks broken. That is why this is measured rather
+    /// than assumed - a fixed 62px row is only correct at the default font size, and the Font Size
+    /// setting scales the fonts up to 16 while control sizes stay put.
+    /// </para>
+    /// <para>
+    /// Needs a real device context, so it cannot be called from the headless suites; the layout
+    /// decision itself lives in <see cref="MainLayout.RequiredToggleRowHeight"/>, which is tested.
+    /// </para>
+    /// </summary>
+    public int RequiredHeight(Graphics graphics, int width)
+    {
+        const TextFormatFlags flags =
+            TextFormatFlags.Left | TextFormatFlags.WordBreak |
+            TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix;
+
+        var textWidth = Math.Max(1, width - 58);
+        using var small = Theme.UiFont(8.9f);
+
+        var title = TextRenderer.MeasureText(graphics, Text, Font, new Size(textWidth, 1000), flags);
+        var description = TextRenderer.MeasureText(graphics, Description, small, new Size(textWidth, 1000), flags);
+
+        // The title sits in a fixed 20px band at the top; the description starts 24px down and gets
+        // Height - 28, so it needs description.Height + 28 to show in full.
+        var needed = Math.Max(title.Height + 2, description.Height + 28);
+        return Math.Max(Height, needed);
+    }
+
     public ToggleSwitch()
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |

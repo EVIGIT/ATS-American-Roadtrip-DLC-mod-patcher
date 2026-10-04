@@ -12,18 +12,6 @@ public sealed partial class ConverterForm : Form
     private const int ContentWidth = 812;
 
     /// <summary>
-    /// Options card height, aliasing <see cref="MainLayout.OptionsCardHeight"/> rather than
-    /// repeating the literal.
-    /// <para>
-    /// The two dealer-branding toggles were placed in the row layout that already existed
-    /// instead of on a row of their own, which is what kept this height unchanged. Adding a
-    /// fifth row would have pushed the default window to 1150px and started a scrollbar on any
-    /// 1080p desktop, so the card and the window budget both stayed where they were.
-    /// </para>
-    /// </summary>
-    private const int OptionsCardHeight = MainLayout.OptionsCardHeight;
-
-    /// <summary>
     /// Extra chrome above the log card that is not already counted in
     /// <see cref="MainLayout.ContentAboveLog"/>. Zero today; a tab strip will raise it, and the
     /// window budget has to rise by exactly the same amount or the log gets squeezed and the
@@ -160,11 +148,13 @@ public sealed partial class ConverterForm : Form
         BackColor = Theme.Background;
         ForeColor = Theme.Text;
         Font = Theme.UiFont(9.5f);
-        // Clamp to the working area so the window never opens taller than the screen. The cards
-        // above the log need ~816px, which a 768px display cannot show; AutoScroll handles
-        // the overflow, so the page is scrolled rather than clipped.
+        // Clamp to the working area so the window never opens taller than the screen. The height
+        // tracks the measured options card, so a larger Font Size grows the window rather than
+        // clipping the toggle text; the cards above the log need ~816px, which a 768px display
+        // cannot show, and AutoScroll handles that overflow by scrolling instead of clipping.
         var workingArea = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1024, 768);
-        ClientSize = new Size(ContentWidth + Margin_ * 2, Math.Min(MainLayout.DefaultWindowHeight, workingArea.Height));
+        var openingHeight = Math.Min(MainLayout.DefaultWindowHeightFor(MeasuredOptionsCardHeight()), workingArea.Height);
+        ClientSize = new Size(ContentWidth + Margin_ * 2, openingHeight);
         // Small enough to still open on a 768px-tall display, which a 700px minimum could not.
         MinimumSize = new Size(ContentWidth + Margin_ * 2 + 16, Math.Min(560, workingArea.Height));
         AutoScroll = true;
@@ -416,8 +406,16 @@ public sealed partial class ConverterForm : Form
 
     private int BuildOptionsCard(int y)
     {
-        var card = AddCard(y, OptionsCardHeight, "OPTIONS");
+        // Measure the rows before creating the card, because the card's height is derived from them.
+        // A fixed row height is only correct at the default font size: Theme.UiFont scales the fonts
+        // with the user's Font Size setting while control sizes stay fixed, so at 11 and above the
+        // two-line descriptions no longer fit in 62px. TextRenderer ellipsises rather than throwing,
+        // so this would otherwise be a silent "..." instead of a visible bug.
         var half = (ContentWidth - 36 - 16) / 2;
+        using var probe = new Bitmap(1, 1);
+        using var measure = Graphics.FromImage(probe);
+        var rowHeight = MainLayout.RequiredToggleRowHeight(MeasureOptionsDescriptionHeight(measure, half));
+        var card = AddCard(y, MainLayout.OptionsCardHeightFor(rowHeight), "OPTIONS");
 
         AddCaption(card, "Dealer ID", 18, 46);
         AddFieldBox(card, _dealerId, 18, 68, 130);
@@ -454,14 +452,71 @@ public sealed partial class ConverterForm : Form
         card.Controls.Add(divider);
 
         // The two branding toggles below fill the row that used to hold nothing, so the card does
-        // not grow. Adding a row here would push the default window past 1080p, and 1080p is the
-        // most common desktop height - the page would start scrolling for almost everyone.
-        PlaceToggle(card, _patchOnly, 18, 156, ContentWidth - 36, stretch: true);
-        PlaceTogglePair(card, _translateDealer, _moveVehicleAssets, 218);
-        PlaceTogglePair(card, _mapCameras, _namespaceAnonymous, 280);
-        PlaceTogglePair(card, _useSourceBrand, _renameBrandLogo, 342);
+        // not grow at the default font size. Rows are stacked at MainLayout.FirstToggleRowY with the
+        // measured row height as the pitch, so a larger Font Size grows the card instead of clipping
+        // the text; the form already scrolls when the content is taller than the screen.
+        var rowY = MainLayout.FirstToggleRowY;
+        PlaceToggle(card, _patchOnly, 18, rowY, ContentWidth - 36, rowHeight, stretch: true);
+        rowY += rowHeight;
+        PlaceTogglePair(card, _translateDealer, _moveVehicleAssets, rowY, rowHeight);
+        rowY += rowHeight;
+        PlaceTogglePair(card, _mapCameras, _namespaceAnonymous, rowY, rowHeight);
+        rowY += rowHeight;
+        PlaceTogglePair(card, _useSourceBrand, _renameBrandLogo, rowY, rowHeight);
 
-        return y + OptionsCardHeight + 16;
+        return y + card.Height + 16;
+    }
+
+    /// <summary>
+    /// The options card height the current font size needs, measured from the real toggle text.
+    /// <para>
+    /// Used for the window's opening height, which has to be decided before <c>BuildOptionsCard</c>
+    /// runs. It measures the same six paired toggles against the same width, so both callers agree
+    /// on one number rather than each re-deriving it.
+    /// </para>
+    /// </summary>
+    private int MeasuredOptionsCardHeight()
+    {
+        var half = (ContentWidth - 36 - 16) / 2;
+        using var probe = new Bitmap(1, 1);
+        using var measure = Graphics.FromImage(probe);
+        var rowHeight = MainLayout.RequiredToggleRowHeight(MeasureOptionsDescriptionHeight(measure, half));
+        return MainLayout.OptionsCardHeightFor(rowHeight);
+    }
+
+    /// <summary>
+    /// The tallest description among the six options toggles, measured at the real paired width.
+    /// <para>
+    /// The full-width patch switch is excluded on purpose: it gets the whole card width, so it wraps
+    /// to at most two lines regardless of font size, whereas the paired rows are the ones that grow.
+    /// Including it would inflate every row to the patch switch's height and undo the packing that
+    /// keeps the window at 1080px.
+    /// </para>
+    /// </summary>
+    private int MeasureOptionsDescriptionHeight(Graphics graphics, int pairedWidth)
+    {
+        using var small = Theme.UiFont(8.9f);
+        const TextFormatFlags flags =
+            TextFormatFlags.Left | TextFormatFlags.WordBreak |
+            TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix;
+
+        var textWidth = Math.Max(1, pairedWidth - 58);
+        var probe = new Size(textWidth, 1000);
+
+        var worst = 0;
+        foreach (var toggle in new[]
+                 {
+                     _translateDealer, _moveVehicleAssets,
+                     _mapCameras, _namespaceAnonymous,
+                     _useSourceBrand, _renameBrandLogo,
+                 })
+        {
+            var title = TextRenderer.MeasureText(graphics, toggle.Text, toggle.Font, probe, flags);
+            var description = TextRenderer.MeasureText(graphics, toggle.Description, small, probe, flags);
+            worst = Math.Max(worst, Math.Max(title.Height, description.Height));
+        }
+
+        return worst;
     }
 
     private int BuildActionArea(int y)
@@ -662,10 +717,10 @@ public sealed partial class ConverterForm : Form
     /// control at its designed width, which is required whenever a row holds more than one
     /// control and they have to keep a gap between them.
     /// </param>
-    private static void PlaceToggle(Control parent, ToggleSwitch toggle, int x, int y, int width, bool stretch)
+    private static void PlaceToggle(Control parent, ToggleSwitch toggle, int x, int y, int width, int height, bool stretch)
     {
         toggle.Location = new Point(x, y);
-        toggle.Size = new Size(width, 62);
+        toggle.Size = new Size(width, height);
         toggle.BackColor = Theme.Surface;
         // A left+right anchor stretches the control from its left edge, which walks it straight
         // into its neighbour on any row that holds two toggles.
@@ -685,7 +740,7 @@ public sealed partial class ConverterForm : Form
     /// making a switch appear to vanish behind the UI.
     /// </para>
     /// </summary>
-    private static void PlaceTogglePair(Control parent, ToggleSwitch left, ToggleSwitch right, int y)
+    private static void PlaceTogglePair(Control parent, ToggleSwitch left, ToggleSwitch right, int y, int height)
     {
         foreach (var toggle in new[] { left, right })
         {
@@ -701,8 +756,8 @@ public sealed partial class ConverterForm : Form
             var inner = parent.ClientSize.Width - 36;
             var half = Math.Max(160, (inner - 16) / 2);
 
-            left.Size = new Size(half, 62);
-            right.Size = new Size(half, 62);
+            left.Size = new Size(half, height);
+            right.Size = new Size(half, height);
             left.Location = new Point(18, y);
             right.Location = new Point(18 + half + 16, y);
         }
