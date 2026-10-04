@@ -7,10 +7,12 @@ duplication bug is recorded. **v1.3.9.2 and v1.4 are open.**
 v1.3.9 shipped the authentication removal, launch page, About tab, layout fixes, dealer branding
 and badges, the car-duplication fix, the `invalid_vehicle` fix, and the transparent-badge work.
 
-The badge work in v1.3.9 was verified at the file level, not visually: the DXT1 → DXT5
-conversion is byte-checked and provably lossless to the artwork, but nobody has yet seen the
-resulting badge in the car dealership. Items 8–9 below carry the cosmetic remainder forward to
-v1.4, along with the reason it was not done in v1.3.9.
+**The badge rendering is now verified in game.** The maintainer's screenshot confirms the black
+rectangle is gone from the Volvo and BMW badges, with the stock Ford, Dodge and RAM badges
+unaffected — which is the last thing v1.3.9 left unconfirmed, and the reason the transparency
+work is closed rather than merely tested. The same screenshot confirmed the two cosmetic defects
+remain, and both are now **measured and explained** rather than guessed at; see *Badge rendering,
+verified in game* at the bottom of this file. Items 8–9 carry the cosmetic remainder to v1.4.
 
 ## Working rules (agreed)
 
@@ -910,13 +912,29 @@ in-game testing; items 5–7 came out of it.
    12-character limit. That would catch any future source of illegal names, including ones that
    never pass through the namespacing code.
 
-8. **Normalise the dealer's badge geometry.** v1.3.9 makes the background transparent but leaves
-   the artwork at its original dimensions, and the game draws the badge into a fixed slot. Two
-   live examples: BMW's 256x64 roundel looks **stretched** next to the square-ish stock badges,
-   and Volvo's 128x64 badge looks **small**. Fixing this is not a matter of rescaling the
-   texture — the aspect ratio of the slot, and whether the game letterboxes or crops, has to be
-   read out of the base game's own `ford.dds`/`dodge.dds`/`ram.dds` first. Measure, then pad or
-   resample to the reference geometry.
+8. **Normalise the dealer's badge geometry — MEASURED, and the cause is now known.** The
+   in-game verification closed this question, so the guesswork this item carried is replaced with
+   the actual numbers (full analysis at the bottom of this file under *Badge geometry, measured*).
+   Neither badge is the wrong size because the game distorts it. Both are correct; they simply
+   **waste half their canvas**:
+
+   | Badge | Canvas | Opaque artwork | Occupies | Canvas aspect | Artwork aspect |
+   |---|---|---|---|---|---|
+   | Volvo | 128x64 | 64x47 at (32,9) | **50%** of width | 2.00:1 | 1.36:1 |
+   | BMW | 256x64 | 127x49 at (64,7) | **50%** of width | 4.00:1 | 2.59:1 |
+
+   Both are centred on a canvas twice as wide as the artwork, so the game scales the whole canvas
+   into its slot and the logo ends up at half the size it could be. That is the "small" Volvo.
+
+   The BMW additionally reads as **stretched** because its canvas is 4:1 while the roundel inside
+   is 2.59:1 — the game stretches the *canvas*, and the roundel is squashed horizontally into that
+   too. The fix is therefore to **crop to the opaque bounding box** (and re-pad to the reference
+   aspect), not to resample the artwork. Cropping is nearly lossless: it copies existing blocks
+   rather than re-encoding them, so the byte-for-byte colour guarantee survives, unlike item 9.
+
+   To pick the target aspect, read the real geometry out of the base game's own `ford.dds`,
+   `dodge.dds` and `ram.dds` rather than assuming — Ford is an oval, Dodge and RAM are wordmarks,
+   and a single "correct" aspect probably does not exist for all three.
 9. **Greyscale converted badges to match the stock treatment.** The base game's badges read as
    monochrome in the dealership; converted badges keep their brand colours (BMW blue-and-white,
    Volvo's blue), so they read as different objects. This is a separate change from item 8 and
@@ -2002,3 +2020,72 @@ tested and colour was assumed rather than measured. Comparing **against the sour
 against an expectation — is what exposed it. A test that checks the property you just implemented
 will not notice the property you broke.
 
+---
+
+## Badge rendering, verified in game
+
+The last outstanding item from v1.3.9 was that every badge check so far had been byte-level, and
+byte-level tests cannot confirm what the car shop actually draws. **The maintainer has now
+screenshot in game, and the black-box fix is confirmed working.** No black rectangle behind
+either the Volvo or the BMW badge, alongside the stock Ford, Dodge and RAM badges, which render
+exactly as they always did. That was the whole point of the DXT1 → DXT5 work and it holds.
+
+The same screenshot shows the two cosmetic defects are still there, so this section records what
+they actually are rather than what they looked like.
+
+### What the screenshot shows
+
+| Badge | Symptom | Verdict |
+|---|---|---|
+| Volvo | small compared with the stock badges | Confirmed, and now explained below |
+| BMW | looks stretched / squashed horizontally | Confirmed, and now explained below |
+| Ford, Dodge, RAM | correct, unchanged | Unaffected, as intended |
+| Colour | BMW and Volvo keep their brand colours; the stock badges read monochrome | Still an open item (v1.4 item 9) |
+
+### The cause, measured from the converted archives
+
+Measured with the converter's own `BrandLogoAlpha.TryDecode`, on the `car_brand_logo/*.dds` inside
+the two `_roadtrip.scs` the maintainer produced:
+
+| Badge | Canvas | Opaque bounding box | Origin | Occupies | Canvas aspect | Art aspect | Opaque pixels |
+|---|---|---|---|---|---|---|---|
+| Volvo `volvo_cars.dds` | 128x64 | 64x47 | (32,9) | **50%** wide, 73% tall | 2.00:1 | 1.36:1 | 13.3% of canvas |
+| BMW `bmw.dds` | 256x64 | 127x49 | (64,7) | **50%** wide, 77% tall | 4.00:1 | 2.59:1 | 27.8% of canvas |
+
+Both are correct DXT5 with 6 mip levels, and both carry the artwork centred on a canvas **twice
+as wide as the artwork needs**. So neither badge is distorted by the game and neither is the wrong
+resolution. The game scales the whole canvas into its slot, and the logo ends up at half the size
+it could have been. That is exactly the "small Volvo".
+
+BMW reads as *stretched* for a second, compounding reason: its canvas is 4:1 while the roundel
+inside it is 2.59:1. The game stretches the canvas, and the roundel is squashed horizontally
+along with it. The roundel should be round; the file makes it an ellipse before the game touches
+it.
+
+### What this changes about the fix
+
+The v1.4 item was written as "normalise the geometry", which invited a resample. **Do not
+resample.** Both problems are solved by **cropping to the opaque bounding box** and padding to the
+reference aspect, because:
+
+- Cropping **copies existing blocks**. It re-encodes nothing, so the byte-for-byte colour
+  guarantee the alpha pass is built on survives intact — which is precisely what a resample would
+  destroy, and what caused the earlier "Volvo's red came back green" failure.
+- Both bounds are already block-aligned in the vertical direction (Volvo y 9–55, BMW y 7–55), so
+  the horizontal crop has to snap to 4-pixel block boundaries or it cannot be done as a copy. That
+  is a detail worth pinning in a test rather than discovering.
+- The target aspect should be read out of the base game's own `ford.dds`, `dodge.dds` and
+  `ram.dds`. Ford is an oval, Dodge and RAM are wordmarks; assuming one "correct" aspect for all
+  three will be wrong for at least two of them.
+
+### Process note
+
+This took three releases to close, and the reason is worth keeping: the badge work was verified
+exhaustively at the byte level and every check passed while two visible defects remained. What was
+missing was a measurement of the thing actually being judged — **how much of the canvas the
+artwork occupies**. Every test asked "is the alpha correct?" and alpha was correct. Nobody asked
+"is the logo the right size?", because that question needs the game's own badges as a reference
+and nobody had read them out of `base.scs`.
+
+The general lesson: a property that was never measured should not be reported as working. "No
+black box" is now verified, and that is stated here rather than inferred from the file passing.

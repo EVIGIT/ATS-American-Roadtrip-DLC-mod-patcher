@@ -150,10 +150,12 @@ That last case is handled by `BrandLogoAlpha.cs`, and the approach matters:
 - A logo that **already has an alpha channel**, or one this build cannot decode, is left
   byte-identical.
 
-> **Known cosmetic gap.** Badges are converted, not re-laid-out: a wide logo can still look
-> stretched or small next to the base-game badges, and a coloured logo keeps its colour rather than
-> being greyscaled to match. Normalising aspect ratio, size and colour to match the stock badges is
-> scheduled for v1.4.
+> **Known cosmetic gap.** Badges are converted, not re-laid-out. Both affected badges are correct
+> DXT5 files that place the logo on a canvas twice as wide as it needs, so the game scales the
+> canvas and the logo renders at half the size it could be — which is why the BMW roundel looks
+> stretched and the Volvo badge looks small next to the stock badges. A coloured badge also keeps
+> its own colours rather than the greyscale the stock badges use. Cropping the empty margin away
+> and greyscaling are both scheduled for v1.4.
 
 ---
 
