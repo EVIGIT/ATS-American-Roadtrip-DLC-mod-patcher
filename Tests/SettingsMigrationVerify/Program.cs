@@ -387,6 +387,32 @@ Check(
         == MainLayout.PreferredLogCardHeight,
     "the log keeps its preferred size once a tab strip is accounted for");
 
+// Verify the roadmap's planned version numbers sort the way the launch page will present them.
+// ReleaseNotes.SectionsNewerThan orders by parsed Version, so a planned number that sorts BEFORE
+// an already-released one would surface in the wrong order or not at all. These are the numbers
+// the roadmap now uses.
+var planned = new[] { "v1.3.9.1", "v1.4", "v1.4.1", "v1.4.2", "v1.4.3" };
+var parsed = planned
+    .Select(v => { ReleaseNotes.TryParseVersion(v, out var ver); return (Text: v, Version: ver); })
+    .ToArray();
+
+foreach (var (text, version) in parsed)
+    Check(version != new Version(0, 0), $"the roadmap version {text} parses as a version");
+
+var ascending = parsed.OrderBy(p => p.Version).Select(p => p.Text).ToArray();
+Check(
+    ascending.SequenceEqual(new[] { "v1.3.9.1", "v1.4", "v1.4.1", "v1.4.2", "v1.4.3" }),
+    "the planned releases sort in ascending order, so the launch page lists them correctly");
+
+// The specific trap this renumbering avoided: v1.3.9.2 sorts BELOW v1.4, which would have
+// presented a patch release as though it came before the feature release it depends on.
+Check(
+    parsed.First(p => p.Text == "v1.4.3").Version > parsed.First(p => p.Text == "v1.4").Version,
+    "v1.4.3 sorts above v1.4, unlike the v1.3.9.2 it replaced");
+Check(
+    ReleaseNotes.TryParseVersion("v1.4.3", out var patcher) && patcher > new Version(1, 4, 2),
+    "v1.4.3 sorts above v1.4.2, the highest previously planned release");
+
 // --- Remembered page (roadmap item 7) -----------------------------------------------
 // The enum is persisted in the settings file, so what matters is that a value the current build
 // does not recognise degrades to the main view instead of throwing. SettingsManager.Load

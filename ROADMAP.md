@@ -2,7 +2,7 @@
 
 Status: **v1.3.9.1 released** (tagged and published) on top of v1.3.9. It carries one real
 fix — the option rows no longer clip at Font Size 11 and above — plus a correction to how the
-duplication bug is recorded. **v1.3.9.2 and v1.4 are open.**
+duplication bug is recorded. **v1.4, v1.4.1, v1.4.2 and v1.4.3 are open.**
 
 v1.3.9 shipped the authentication removal, launch page, About tab, layout fixes, dealer branding
 and badges, the car-duplication fix, the `invalid_vehicle` fix, and the transparent-badge work.
@@ -1385,7 +1385,7 @@ below are no longer needed for *this* problem:
 - ~~`base.scs`~~ — the log answered the question the archive was going to be needed for.
 
 Still worth having for **other** open questions, chiefly the patch-mode `invalid_vehicle` merge
-semantics in the v1.3.9.2 notes, which genuinely needs the game's own definition files.
+semantics in the v1.4.3 notes, which genuinely needs the game's own definition files.
 
 **The badge rendering in game is still unverified**, and that is the actual open item.
 
@@ -1755,7 +1755,7 @@ tested switch with the revert cost spelled out in the UI, not a silent flip.
 
 v1.3.9 is **tagged and published**. Of the five items that stood between the tree and a release,
 three are closed; the option-row check in item 4 was also closed by v1.3.9.1, and the patcher fix
-in item 1 is now scoped to v1.3.9.2.
+in item 1 is now scoped to v1.4.3.
 
 1. **Patch-mode position — CLOSED.** The maintainer chose option (c): v1.3.9 shipped with patch
    mode **off by default** and labelled as having a known bug. The switch is off, it is renamed
@@ -1806,13 +1806,15 @@ in item 1 is now scoped to v1.3.9.2.
    branding and badges, both namespace fixes, `MainLayout.cs`, `ReleaseNotes.cs`,
    `SettingsSchema.cs`, `BrandLogoAlpha.cs`, both test projects, and a full README overhaul.
 
-## v1.3.9.2 — the patcher fix
+## v1.4.3 — the patcher fix
 
-**Renumbered from v1.3.9.1.** v1.3.9.1 was released for the option-row clipping fix and did not
-touch patch mode at all, so the patcher fix it was originally scoped for is now v1.3.9.2.
+**Renumbered twice: v1.3.9.1 → v1.3.9.2 → v1.4.3.** The fix itself has moved once already —
+v1.3.9.1 was released for the option-row clipping fix and never touched patch mode. It was then
+renumbered to v1.3.9.2, and finally to v1.4.3 so it sits in the same numbered family as v1.4,
+v1.4.1 and v1.4.2 instead of claiming to be a patch release that follows the v1.3.9 line.
 
 **Scope decided by the maintainer: v1.3.9 shipped first**, with patch mode off by default and
-labelled as buggy, and v1.3.9.2 is then the proper fix. Its scope is the research note at the
+labelled as buggy, and this is then the proper fix. Its scope is the research note at the
 bottom of this file — in short:
 
 1. Stop writing an empty unit tree over the original's `truck_dealer` entry; redefine that unit
@@ -1897,7 +1899,7 @@ but it is **not** what causes `invalid_vehicle` in the current build, because th
 already emits legal 12-character namespaces and still crashes. Two distinct bugs were conflated,
 and the second one was hidden behind the first.
 
-### Fix direction for v1.3.9.2
+### Fix direction for v1.4.3
 
 1. **Do not blank the original dealer entry.** Instead of overwriting
    `truck_dealer/<brand>/*.sii` with an empty unit tree, redefine that *same unit name* with valid
