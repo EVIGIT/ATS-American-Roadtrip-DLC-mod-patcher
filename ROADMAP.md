@@ -932,9 +932,41 @@ in-game testing; items 5–7 came out of it.
    aspect), not to resample the artwork. Cropping is nearly lossless: it copies existing blocks
    rather than re-encoding them, so the byte-for-byte colour guarantee survives, unlike item 9.
 
-   To pick the target aspect, read the real geometry out of the base game's own `ford.dds`,
-   `dodge.dds` and `ram.dds` rather than assuming — Ford is an oval, Dodge and RAM are wordmarks,
-   and a single "correct" aspect probably does not exist for all three.
+   To pick the target aspect, read the real geometry out of the base game's own materials. The
+   earlier instruction to read `ford.dds` / `dodge.dds` / `ram.dds` was **wrong and impossible**:
+   `base.scs` contains **zero `.dds` files** — every texture is packed inside its `.tobj` — so the
+   pixel dimensions cannot be read from a HashFS v2 archive at all.
+
+   **The slot is declared in the `.mat`, not the texture.** `material/ui/brand_logo/<brand>.mat`
+   carries `aux[0]`, which is the size the game draws the badge at:
+
+       effect : "ui.sdf.rfx" {
+           aux[0] : { 175.00000, 89.00000, 2.00000, 0.00000 }
+           texture : "texture" { source : "volvo.tobj" }
+
+   Measured from `base.scs` (8.7 GB, HashFS v2, 147,084 entries):
+
+   | Badge | Slot | Aspect |
+   |---|---|---|
+   | freightliner, intnational, kenworth, mack, peterbilt, volvo, westernstar, all | 175 x 89 | **1.97:1** |
+   | modded | 178 x 93 | 1.91:1 |
+
+   So the target is **1.97:1**, and it comes from the game's own metadata rather than from trusting
+   a measurement of pixels that cannot be read. Against that target:
+
+   | Badge | Canvas | Canvas aspect | Verdict |
+   |---|---|---|---|
+   | Volvo | 128x64 | 2.00:1 | Already within 1.5% of the slot — it is **not** a reshape, only a padding trim |
+   | BMW | 256x64 | 4.00:1 | **Wrong by 2x.** This is the stretch, and the one that matters visually |
+
+   Both are the same operation — crop to opaque bounds, re-pad to 1.97:1 — but only BMW is a
+   genuine aspect correction.
+
+   **The third `aux[0]` value is `2.00000`, confirmed rather than assumed.** All nine dealer badges
+   use it, including `modded` which differs in the first two values; across **every** `ui.sdf.rfx`
+   material in `base.scs` it is **91 of 91**. It is therefore a constant, not a per-badge parameter,
+   and copying it verbatim is safe. Worth recording because "what does the 2 mean" could not be
+   determined from a truck badge alone — it is only safe because it never varies.
 9. **Greyscale converted badges to match the stock treatment.** The base game's badges read as
    monochrome in the dealership; converted badges keep their brand colours (BMW blue-and-white,
    Volvo's blue), so they read as different objects. This is a separate change from item 8 and
@@ -2076,9 +2108,9 @@ reference aspect, because:
 - Both bounds are already block-aligned in the vertical direction (Volvo y 9–55, BMW y 7–55), so
   the horizontal crop has to snap to 4-pixel block boundaries or it cannot be done as a copy. That
   is a detail worth pinning in a test rather than discovering.
-- The target aspect should be read out of the base game's own `ford.dds`, `dodge.dds` and
-  `ram.dds`. Ford is an oval, Dodge and RAM are wordmarks; assuming one "correct" aspect for all
-  three will be wrong for at least two of them.
+- The target aspect is **1.97:1**, read from `aux[0]` in the base game's own `brand_logo/*.mat`:
+  175x89 for eight of the nine badges, 178x93 for `modded`. See the roadmap item above for why the
+  textures themselves cannot be read.
 
 ### Process note
 
@@ -2086,8 +2118,19 @@ This took three releases to close, and the reason is worth keeping: the badge wo
 exhaustively at the byte level and every check passed while two visible defects remained. What was
 missing was a measurement of the thing actually being judged — **how much of the canvas the
 artwork occupies**. Every test asked "is the alpha correct?" and alpha was correct. Nobody asked
-"is the logo the right size?", because that question needs the game's own badges as a reference
-and nobody had read them out of `base.scs`.
+"is the logo the right size?", because the obvious place to look was unreadable: the pixel
+dimensions live in a `.dds` that is packed inside a `.tobj` and cannot be extracted from a HashFS
+v2 archive.
 
-The general lesson: a property that was never measured should not be reported as working. "No
-black box" is now verified, and that is stated here rather than inferred from the file passing.
+Don't ask what the 2 means — check that it never varies. It is 2.00000 in all nine dealer badges
+and in 91 of 91 `ui.sdf.rfx` materials in `base.scs`, so copying it verbatim is safe. Had it
+differed anywhere, guessing would have been the whole risk of writing our own `.mat`.
+
+The measurement that answered it was in a different file. The badge slot is not a property of the
+texture at all — it is declared as `aux[0]` in the `.mat`, which is plain text and extracts
+cleanly. Two earlier turns of this work assumed the answer lived in the texture because that is
+where the pixels are.
+
+The general lesson: **a property that was never measured should not be reported as working**, and
+when a measurement turns out to be unreadable, the answer is usually in a different file rather
+than in a more elaborate way of reading the same one.
