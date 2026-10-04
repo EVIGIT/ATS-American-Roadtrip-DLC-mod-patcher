@@ -1,11 +1,3 @@
-using System.Diagnostics;
-using System.Drawing.Drawing2D;
-using System.Drawing.Text;
-using System.Runtime.InteropServices;
-using System.Windows.Forms;
-using System.Collections.Generic;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 namespace ATSRoadTripConverter;
 internal sealed class ThemedConfirmForm : Form
 {

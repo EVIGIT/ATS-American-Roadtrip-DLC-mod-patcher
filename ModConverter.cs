@@ -124,7 +124,10 @@ public sealed record ConversionSettings(
     bool TranslateDealerDefinitions,
     bool PatchOnly = false,
     string VehicleType = "pickup",
-    bool MapCamerasToCarUnits = true)
+    bool MapCamerasToCarUnits = true,
+    bool NamespaceAnonymousUnits = true,
+    bool UseSourceBrandToken = true,
+    bool RenameBrandLogo = true)
 {
     public static readonly string[] VehicleTypes =
         { "sedan", "hatchback", "pickup", "van" };
@@ -148,6 +151,44 @@ public sealed class ConversionStats
     public int FilesReplacedFromEarlierPatch;
     public int DealerFilesConverted;
     public int DealerFilesCreatedFromReference;
+
+    /// <summary>
+    /// Count of car definitions moved into the dealer's brand namespace
+    /// (<c>vehicle.&lt;dealer&gt;.&lt;model&gt;</c>), which is what decides the dealership a car
+    /// is listed under.
+    /// </summary>
+    public int CarsBrandscoped;
+
+    /// <summary>Count of <c>_nameless.*</c> occurrences rewritten to a unique namespace.</summary>
+    public int AnonymousUnitsNamespaced;
+
+    /// <summary>
+    /// Count of <c>brand_logo</c> .mat files that existed but were empty or zero-filled.
+    /// These are unusable placeholders, so this is a count of things the user needs to be told
+    /// about rather than something the converter can fix on its own.
+    /// </summary>
+    public int EmptyBrandLogos;
+
+    /// <summary>
+    /// Count of extra <c>brand_logo</c> material files written so a renamed dealer keeps
+    /// the mod's own logo.
+    /// </summary>
+    public int BrandLogosAdded;
+
+    /// <summary>
+    /// Logo textures rewritten from DXT1 to DXT5 so their background is transparent.
+    /// </summary>
+    public int BrandLogosMadeTransparent;
+
+    /// <summary>
+    /// The brand the mod shipped with, as read from <c>def/vehicle/truck_dealer/&lt;brand&gt;</c>.
+    /// Empty when the mod carried no truck dealer at all. This is the token the game's own
+    /// <c>material/ui/brand_logo/&lt;brand&gt;.mat</c> is named after.
+    /// </summary>
+    public string SourceBrandToken { get; set; } = "";
+
+    /// <summary>Distinct unit names that were namespaced, for the report.</summary>
+    public HashSet<string> AnonymousUnitNames { get; } = new(StringComparer.Ordinal);
 }
 
 public static class ModConverter
@@ -157,10 +198,8 @@ public static class ModConverter
         Action<string> log,
         Action<int> progress)
     {
-        var dealerId = SanitizeId(settings.DealerId);
-        if (dealerId == "custom" && !string.Equals(settings.DealerId.Trim(), "custom", StringComparison.OrdinalIgnoreCase))
-            log("[WARNING] Dealer ID contained no usable letters/numbers; using 'custom'.");
-
+        // The dealer ID cannot be settled until the mod has been read: keeping the mod's own
+        // brand means reading that brand out of the mod, not out of the text box.
         var work = Path.Combine(
             Path.GetTempPath(),
             "ats_roadtrip_" + Guid.NewGuid().ToString("N"));
@@ -175,6 +214,27 @@ public static class ModConverter
 
             var root = FindModRoot(work);
             log($"[INFO] Mod root: {root}");
+
+            // --- Which brand this conversion becomes -------------------------------
+            // A mod is built around its own brand token, and the game looks the dealer's
+            // logo up by that same token (material/ui/brand_logo/<brand>.mat). Keeping the
+            // token is therefore the option that needs no logo work at all, which is why
+            // it is the default; renaming it is opt-in and gets the logo copied.
+            var sourceToken = DiscoverSourceBrandToken(root, log);
+
+            var dealerId = SanitizeId(settings.DealerId);
+            if (settings.UseSourceBrandToken && sourceToken != null)
+            {
+                if (!dealerId.Equals(sourceToken, StringComparison.OrdinalIgnoreCase))
+                    log($"[INFO] Dealer ID '{dealerId}' ignored: keeping the mod's own brand '{sourceToken}' " +
+                        "so its dealership logo keeps working.");
+                dealerId = sourceToken;
+            }
+            else if (dealerId == "custom" &&
+                     !string.Equals(settings.DealerId.Trim(), "custom", StringComparison.OrdinalIgnoreCase))
+            {
+                log("[WARNING] Dealer ID contained no usable letters/numbers; using 'custom'.");
+            }
 
             RemoveLegacyTruckSourceFiles(root, log);
 
@@ -225,9 +285,14 @@ public static class ModConverter
                 : new List<string>();
 
             var textBeforeMove = ReadAllTextDefinitionPaths(root, stats);
+            var migratedTruckFolders = new List<string>();
             if (Directory.Exists(truckDef))
             {
                 log("-> Migrating def/vehicle/truck to def/vehicle/car...");
+                migratedTruckFolders.AddRange(
+                    Directory.GetDirectories(truckDef)
+                             .Select(d => Path.GetFileName(d)!)
+                             .Where(n => !string.IsNullOrEmpty(n)));
                 MergeTree(truckDef, carDef, log, stats);
                 Directory.Delete(truckDef, true);
             }
@@ -251,7 +316,17 @@ public static class ModConverter
             progress(35);
 
             log("-> Converting SII/SUI definitions...");
-            ConvertDefinitionFiles(root, stats, log, moveAssets, settings.VehicleType, settings.PatchOnly, mapCameras);
+            // Two converted mods can both inherit "_nameless." unit names from their source
+            // mod. Those names are global in SCS, so the second mod silently replaces the
+            // first. Each conversion therefore gets its own namespace unless the user
+            // turns that off.
+            var anonymousNamespace = settings.NamespaceAnonymousUnits
+                ? BuildAnonymousNamespace(dealerId, settings.InputFile)
+                : null;
+            if (anonymousNamespace != null)
+                log($"[INFO] Namespacing global _nameless units as '_nameless.{anonymousNamespace}.' to avoid clashes with other mods.");
+
+            ConvertDefinitionFiles(root, stats, log, moveAssets, settings.VehicleType, settings.PatchOnly, mapCameras, anonymousNamespace);
 
             progress(55);
 
@@ -274,6 +349,20 @@ public static class ModConverter
             {
                 ConvertExistingDealers(root, dealerId, moveAssets, stats, log, settings.PatchOnly);
             }
+
+            // A car is listed under the dealership named by the middle component of its
+            // accessory_truck_data unit (base game: vehicle.ford.f150_23 under
+            // car_dealer/ford). Truck-era mods omit that component, so without this the car
+            // has no dealership of its own and the game files it under another brand's.
+            log("-> Assigning the converted car to the selected dealer...");
+            AssignDealerBrand(root, dealerId, migratedTruckFolders, stats, log);
+
+            CopyBrandLogoForDealer(root, sourceToken, dealerId, settings.RenameBrandLogo, stats, log);
+            EnsureCarBrandLogo(root, sourceToken, dealerId, settings.RenameBrandLogo, stats, log);
+            stats.SourceBrandToken = sourceToken ?? "";
+
+            if (stats.CarsBrandscoped == 0)
+                log("[INFO] No car definition needed renaming; it already carried a brand component.");
 
             // If a reference is provided, only add missing car_dealer framework files.
             if (!string.IsNullOrWhiteSpace(referenceRoot))
@@ -383,6 +472,11 @@ public static class ModConverter
         }
 
         log($"[PATCH] Copied all definition files to patch");
+
+        // A definitions-only patch ships def/ and vehicle/ but nothing under material/, so a
+        // dealer logo written by CopyBrandLogoForDealer would be silently dropped here and the
+        // converted dealer would end up with no logo. The logo has to travel with the patch.
+        CopyBrandLogoTree(root, patchRoot, log);
 
         // Copy vehicle assets from vehicle/truck to vehicle/car
         var vehicleSource = Path.Combine(root, "vehicle");
@@ -501,12 +595,13 @@ public static class ModConverter
         bool moveVehicleAssets,
         string vehicleType,
         bool isPatchMode = false,
-        bool mapCamerasToCarUnits = true)
+        bool mapCamerasToCarUnits = true,
+        string? anonymousNamespace = null)
     {
         foreach (var file in Directory.EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
                      .Where(IsTextDefinition))
         {
-            ConvertDefinitionFile(file, stats, log, moveVehicleAssets, vehicleType, isPatchMode, mapCamerasToCarUnits);
+            ConvertDefinitionFile(file, stats, log, moveVehicleAssets, vehicleType, isPatchMode, mapCamerasToCarUnits, anonymousNamespace);
         }
     }
 
@@ -517,7 +612,8 @@ public static class ModConverter
         bool moveVehicleAssets,
         string vehicleType,
         bool isPatchMode = false,
-        bool mapCamerasToCarUnits = true)
+        bool mapCamerasToCarUnits = true,
+        string? anonymousNamespace = null)
     {
         byte[] bytes;
         try
@@ -585,6 +681,20 @@ public static class ModConverter
         if (isVehicleDefinitionFile && IsCarInteriorFile(file))
             text = AddSpeedLimiterValue(text, normalizedVehicleType);
 
+        // Global anonymous units are namespaced last, so it also catches any name that a
+        // definition was expected to introduce.
+        if (anonymousNamespace != null)
+        {
+            var renamed = new List<string>();
+            text = NamespaceAnonymousUnits(text, anonymousNamespace, renamed.Add);
+            if (renamed.Count > 0)
+            {
+                stats.AnonymousUnitsNamespaced += renamed.Count;
+                foreach (var name in renamed.Distinct())
+                    stats.AnonymousUnitNames.Add(name);
+            }
+        }
+
         if (!string.Equals(text, original, StringComparison.Ordinal))
         {
             File.WriteAllText(file, text, new UTF8Encoding(false));
@@ -595,6 +705,191 @@ public static class ModConverter
         {
             stats.TextFilesUnchanged++;
         }
+    }
+
+    /// <summary>
+    /// Rewrites global anonymous units (<c>_nameless.x</c>) so they carry a per-mod namespace.
+    /// <para>
+    /// In SCS a <c>_nameless.</c> name is global: two mods defining <c>_nameless._.speed</c>
+    /// define the same unit, so the second one replaces the first. Converted mods inherited
+    /// those names verbatim from their source mod, which is why two different converted cars
+    /// (a Cadillac CT5-V and a Cadillac Escalade, for example) shipped identical dashboard and
+    /// camera unit names and one silently overwrote the other in game.
+    /// </para>
+    /// <para>
+    /// Every occurrence is rewritten consistently, so references between the mod's own files
+    /// still resolve. Only this mod's own definitions are touched; a file is rewritten in one
+    /// pass, so a name is never namespaced twice.
+    /// </para>
+    /// </summary>
+    private static string NamespaceAnonymousUnits(string text, string ns, Action<string>? onRename = null)
+    {
+        if (ns.Length == 0)
+            return text;
+
+        // Guard the 12-character component limit rather than trusting the caller. This is the
+        // difference between a patch that converts cleanly and a patch that only fails in game
+        // with "invalid_vehicle", so it is enforced where the names are actually written.
+        if (ns.Length > MaxUnitNameComponentLength)
+            throw new InvalidOperationException(
+                $"Anonymous-unit namespace '{ns}' is {ns.Length} characters; SCS unit name " +
+                $"components may not exceed {MaxUnitNameComponentLength}.");
+
+        return Regex.Replace(
+            text,
+            @"(?<![A-Za-z0-9_])_nameless\.(?![A-Za-z0-9_]*_nameless\.)",
+            match =>
+            {
+                onRename?.Invoke(match.Value);
+                return "_nameless." + ns + ".";
+            });
+    }
+
+    /// <summary>
+    /// A namespace that is unique to this conversion, used to rewrite global anonymous units.
+    /// <para>
+    /// It must be derived from the <em>input file</em>, not from the dealer ID. Those used to be
+    /// treated as interchangeable on the assumption that one dealer equals one vehicle, and that
+    /// assumption is false in both directions:
+    /// </para>
+    /// <list type="bullet">
+    /// <item>Two different mods share a brand. The two Cadillac mods in the common download set
+    /// are both <c>truck_dealer/cadillac</c>, and the multi-brand Courier mod declares eight
+    /// brands at once. When the dealer ID is taken from the mod's own brand, all of those
+    /// collapse onto one namespace and their cars overwrite each other again - which is the
+    /// exact bug this function exists to prevent.</item>
+    /// <item>Conversely, a user can pick the same dealer ID for two mods by hand, or rely on the
+    /// suggested ID, and reintroduce the collision that way.</item>
+    /// </list>
+    /// <para>
+    /// The file name is therefore the only input that is guaranteed distinct per conversion, so
+    /// it is the basis. It is trimmed of any version suffix a mod author appends
+    /// (<c>Volvo S90 2020 V2.3 1.60.scs</c> and <c>... 1.61.scs</c> are the same vehicle), which
+    /// keeps the namespace stable when a mod is updated to a new game version rather than
+    /// changing on every patch.
+    /// </para>
+    /// <para>
+    /// <b>The result is capped at 12 characters</b>, and that is not cosmetic. SCS unit names are
+    /// dot-separated components of <em>at most 12 characters</em> each (the modding wiki is
+    /// explicit: "correct unit name will be <c>vehicle.dummy.truck</c>", and the dashboard guide
+    /// repeats "it must be in SCS name specification - 12 symbols length"). The file names of
+    /// real mods blow straight past that: <c>cadillac_ct5_v_black_wing_2022</c> is 30 characters,
+    /// <c>ford_f_150_raptor_2017_v1_7_1_beta</c> is 34. Emitting those produced units the engine
+    /// could not resolve, and the game reported <c>invalid_vehicle</c> when loading a save that
+    /// referenced one - the mod appeared to convert cleanly and only failed in game.
+    /// </para>
+    /// <para>
+    /// So the readable part is truncated and a short hash of the <em>full</em> basis is appended.
+    /// Truncation alone would collide (<c>cadillac_ct5_v_black_wing_2022</c> and
+    /// <c>cadillac_escalade_2021</c> share their first 12 characters); the hash is what preserves
+    /// uniqueness, and it is computed from the untruncated string so no information is lost that
+    /// the collision check depends on.
+    /// </para>
+    /// </summary>
+    internal static string BuildAnonymousNamespace(string dealerId, string inputFile)
+    {
+        var basis = StripVersionSuffix(SanitizeId(Path.GetFileNameWithoutExtension(inputFile)));
+
+        // SanitizeId answers "custom" rather than an empty string, so a second pass is needed
+        // to tell "the user named it custom" from "nothing usable was supplied at all".
+        if (basis == "custom")
+            basis = SanitizeId(dealerId);
+        if (basis == "custom")
+            basis = "patch";
+
+        // Lower case, because SCS unit names are case-sensitive and this becomes part of
+        // every anonymous unit name in the mod.
+        return ShortenNamespace(basis.ToLowerInvariant());
+    }
+
+    /// <summary>Maximum length of one component of an SCS unit name.</summary>
+    internal const int MaxUnitNameComponentLength = 12;
+
+    /// <summary>
+    /// Caps a namespace at <see cref="MaxUnitNameComponentLength"/> characters, keeping it
+    /// readable where possible and appending a short hash when truncation happens.
+    /// <para>
+    /// A namespace short enough already is returned untouched, so <c>ford_f250</c> stays
+    /// <c>ford_f250</c> and existing patches keep their unit names.
+    /// </para>
+    /// </summary>
+    private static string ShortenNamespace(string basis)
+    {
+        if (basis.Length <= MaxUnitNameComponentLength)
+            return basis;
+
+        // 4 hash characters leaves 8 readable ones. The hash is over the full basis, not the
+        // truncated prefix, so two names sharing a prefix still differ.
+        const int hashLength = 4;
+        var keep = MaxUnitNameComponentLength - hashLength - 1; // -1 for the '_' join
+        var prefix = basis[..Math.Min(keep, basis.Length)].TrimEnd('_');
+
+        // A prefix of all separators would leave a bare hash, so fall back to the hash alone.
+        if (prefix.Length == 0)
+            return ShortHash(basis, MaxUnitNameComponentLength);
+
+        return prefix + "_" + ShortHash(basis, hashLength);
+    }
+
+    /// <summary>
+    /// A short, stable, lowercase alphanumeric hash of <paramref name="value"/>.
+    /// <para>
+    /// Uses FNV-1a rather than <see cref="string.GetHashCode()"/>, which is deliberately
+    /// randomised per process in .NET and would therefore produce a different namespace on every
+    /// run - breaking every previously patched mod each time the tool was launched.
+    /// </para>
+    /// </summary>
+    private static string ShortHash(string value, int length)
+    {
+        const uint offsetBasis = 2166136261;
+        const uint prime = 16777619;
+
+        var hash = offsetBasis;
+        foreach (var c in value)
+        {
+            hash ^= c;
+            hash *= prime;
+        }
+
+        const string alphabet = "0123456789abcdefghijklmnopqrstuvwxyz";
+        var result = new char[length];
+        for (var i = 0; i < length; i++)
+        {
+            result[i] = alphabet[(int)(hash % (uint)alphabet.Length)];
+            hash /= (uint)alphabet.Length;
+        }
+
+        return new string(result);
+    }
+
+    /// <summary>
+    /// Drops the trailing "version" part mods append to their file names, so the same vehicle
+    /// keeps one namespace across updates. "Volvo S90 2020 V2.3 1.60" becomes
+    /// "Volvo S90 2020"; "Cadillac CT5-V Black Wing 2022 V2.2 1.60" becomes
+    /// "Cadillac CT5-V Black Wing 2022".
+    /// <para>
+    /// The separator class includes <c>_</c> as well as <c>.</c> because this runs *after*
+    /// <see cref="SanitizeId"/>, which has already collapsed every run of punctuation into a
+    /// single underscore - by this point "V2.3 1.60" is "V2_3_1_60", and a dot-only pattern
+    /// silently matches nothing and strips nothing.
+    /// </para>
+    /// <para>
+    /// A trailing qualifier that is not a version ("... Beta") is deliberately left in place, so
+    /// a beta and a full release of the same car get different namespaces. That is the safe
+    /// direction: they are only ever installed together by mistake, and distinct names are what
+    /// stops one silently replacing the other.
+    /// </para>
+    /// </summary>
+    private static string StripVersionSuffix(string name)
+    {
+        // Match a trailing " V<digits>(.<digits>)+" plus an optional following version group.
+        var trimmed = Regex.Replace(
+            name,
+            @"[ _]+v\d+(?:[._]\d+)+(?:[ _]+\d+(?:[._]\d+)*)?$",
+            "",
+            RegexOptions.IgnoreCase);
+
+        return trimmed.Trim().TrimEnd('_', ' ', '-');
     }
 
     private static void ConvertExistingDealers(
@@ -660,6 +955,147 @@ public static class ModConverter
         Directory.Delete(oldDealerRoot, true);
     }
 
+    /// <summary>
+    /// Rewrites a converted car's defining unit so ATS files it under the chosen dealer.
+    /// <para>
+    /// A base-game car declares its dealership in the unit name itself, not in a
+    /// <c>brand</c> attribute. The Road Trip DLC's F-150 is
+    /// <c>accessory_truck_data : vehicle.ford.f150_23</c>, lives in
+    /// <c>def/vehicle/car/ford.f150_23/</c> and its dealer file is
+    /// <c>car_dealer/ford/ford_f150_23.sii</c>: the middle component is the brand, and the
+    /// dealer folder must match it.
+    /// </para>
+    /// <para>
+    /// Truck-era mods name their unit <c>vehicle.vols90</c>, with no brand component at all,
+    /// so the game cannot place the car and falls back to whichever dealership claims the
+    /// unmatched definition. That is why a converted Volvo appeared under the BMW dealer.
+    /// </para>
+    /// </summary>
+    internal static string ApplyDealerBrand(string text, string dealerId, string modelId)
+    {
+        var brand = SanitizeId(dealerId);
+        var model = SanitizeId(modelId);
+        if (brand.Length == 0 || model.Length == 0)
+            return text;
+
+        var replacement = "vehicle." + brand + "." + model;
+
+        // "accessory_truck_data : vehicle.vols90" -> "accessory_truck_data : vehicle.volvo.vols90"
+        var declared = Regex.Replace(
+            text,
+            @"(?im)^(?<indent>[ \t]*accessory_truck_data[ \t]*:[ \t]*)vehicle\.[A-Za-z0-9_.]+",
+            match => match.Groups["indent"].Value + replacement);
+
+        // Any other reference to the old unit elsewhere in the mod's own definitions.
+        declared = Regex.Replace(
+            declared,
+            @"(?<![A-Za-z0-9_.])vehicle\." + Regex.Escape(model) + @"(?![A-Za-z0-9_])",
+            replacement);
+
+        return declared;
+    }
+
+/// <summary>
+    /// Rewrites the converted car's defining unit so ATS files it under the chosen dealer.
+    /// <para>
+    /// A base-game car declares its dealership in the unit name itself, not in a
+    /// <c>brand</c> attribute. The Road Trip DLC's F-150 is
+    /// <c>accessory_truck_data : vehicle.ford.f150_23</c>, sold by <c>car_dealer/ford</c>:
+    /// the middle component is the brand, and the dealer folder must match it.
+    /// </para>
+    /// <para>
+    /// Truck-era mods name their unit <c>vehicle.vols90</c>, with no brand component at all,
+    /// so the game has no dealership to match and lists the car under an unrelated brand -
+    /// which is exactly why a converted Volvo S90 turned up in the BMW dealer.
+    /// </para>
+    /// <para>
+    /// Only the unit name is rewritten, across every definition file in the mod so the
+    /// declaration and all references to it stay in step. The definition folder is left
+    /// alone on purpose: a mod's own files address it by path
+    /// (<c>def/vehicle/car/vols90/...</c>), and renaming the folder without rewriting every
+    /// one of those references leaves the mod pointing at files that are no longer there,
+    /// which crashes the game when a save loads. The unit name is what carries the brand,
+    /// so it is the only part that has to change.
+    /// </para>
+    /// </summary>
+    private static void AssignDealerBrand(
+        string root,
+        string dealerId,
+        IReadOnlyCollection<string> vehicleFolders,
+        ConversionStats stats,
+        Action<string> log)
+    {
+        var brand = SanitizeId(dealerId);
+        var carRoot = Path.Combine(root, "def", "vehicle", "car");
+        if (brand.Length == 0 || !Directory.Exists(carRoot))
+            return;
+
+        // Only the vehicles this conversion migrated. Another mod's car folder sharing the
+        // tree is out of scope, exactly as it is for MergeTree.
+        var targets = vehicleFolders.Count > 0
+            ? vehicleFolders.ToList()
+            : Directory.GetDirectories(carRoot)
+                .Select(d => Path.GetFileName(d)!)
+                .Where(n => !string.IsNullOrEmpty(n))
+                .ToList();
+
+        var models = new List<string>();
+        foreach (var folder in targets)
+        {
+            if (!Directory.Exists(Path.Combine(carRoot, folder)))
+                continue;
+
+            // "m5.g90" keeps its model half; "vols90" has no brand half yet.
+            var model = folder.Contains('.')
+                ? folder[(folder.IndexOf('.') + 1)..]
+                : folder;
+
+            if (SanitizeId(model) is { Length: > 0 } sanitized && !models.Contains(sanitized))
+                models.Add(sanitized);
+        }
+
+        if (models.Count == 0)
+            return;
+
+        // Already-prefixed units are skipped, which makes this idempotent: converting the
+        // same mod twice does not stack dealer names.
+        var pattern = new Regex(
+            @"(?<![A-Za-z0-9_.])vehicle\.(?!" + Regex.Escape(brand) + @"\.)(?<model>" +
+            string.Join("|", models.Select(Regex.Escape)) +
+            @")(?![A-Za-z0-9_])",
+            RegexOptions.IgnoreCase);
+
+        foreach (var file in Directory.EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
+                     .Where(IsTextDefinition))
+        {
+            byte[] bytes;
+            try { bytes = File.ReadAllBytes(file); }
+            catch { continue; }
+
+            if (IsBinaryOrEncryptedSii(bytes))
+                continue;
+
+            string text;
+            try { text = DecodeText(bytes); }
+            catch { continue; }
+
+            if (!pattern.IsMatch(text))
+                continue;
+
+            var updated = pattern.Replace(
+                text,
+                m => "vehicle." + brand + "." + m.Groups["model"].Value);
+
+            File.WriteAllText(file, updated, new UTF8Encoding(false));
+            log($"[EDITED] {GetRelativePathForLog(file)}");
+        }
+
+        stats.CarsBrandscoped += models.Count;
+
+        log($"[BRAND] Assigned {models.Count} car(s) to dealer '{dealerId}': " +
+            string.Join(", ", models.Select(m => "vehicle." + brand + "." + m)));
+    }
+
     private static void CopyMissingReferenceFramework(
         string referenceRoot,
         string targetRoot,
@@ -702,6 +1138,407 @@ public static class ModConverter
         return Directory.EnumerateFiles(folder, "*.*", SearchOption.AllDirectories)
             .Where(IsTextDefinition)
             .ToList();
+    }
+
+    /// <summary>
+    /// Works out which brand the mod was built around, or <c>null</c> if it shipped no
+    /// truck dealer.
+    /// <para>
+    /// The folder under <c>def/vehicle/truck_dealer/</c> is the only reliable source: ATS has no
+    /// <c>brand</c> attribute to read, and a truck-era mod's brand never appears in its unit
+    /// names. A mod that defines more than one truck brand would be ambiguous, so the one that
+    /// also ships a matching <c>brand_logo</c> wins; failing that, the first by name, which keeps
+    /// the choice deterministic rather than dependent on directory-listing order.
+    /// </para>
+    /// </summary>
+    internal static string? DiscoverSourceBrandToken(string root, Action<string>? log = null)
+    {
+        var dealerRoot = Path.Combine(root, "def", "vehicle", "truck_dealer");
+        if (!Directory.Exists(dealerRoot))
+        {
+            log?.Invoke("[INFO] No def/vehicle/truck_dealer folder; this mod has no brand of its own.");
+            return null;
+        }
+
+        var brands = Directory.GetDirectories(dealerRoot)
+            .Select(Path.GetFileName)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name!)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToList();
+
+        if (brands.Count == 0)
+            return null;
+
+        var chosen = brands.FirstOrDefault(brand => HasBrandLogo(root, brand)) ?? brands[0];
+
+        if (brands.Count > 1)
+            log?.Invoke($"[INFO] Mod defines {brands.Count} truck brands ({string.Join(", ", brands)}); " +
+                        $"using '{chosen}'.");
+
+        return SanitizeId(chosen);
+    }
+
+    /// <summary>
+    /// Whether the mod ships the dealer's logo material, named the way the game looks it up.
+    /// </summary>
+    internal static bool HasBrandLogo(string root, string brand) =>
+    FindBrandLogoMaterial(root, brand) != null;
+
+    /// <summary>
+    /// Whether a file has real content, as opposed to existing but being empty or zero-filled.
+    /// <para>
+    /// This guards a real failure mode rather than a hypothetical one: a mod author can reserve
+    /// <c>brand_logo/&lt;brand&gt;.mat</c> as a placeholder and never fill it in, and an empty
+    /// file is indistinguishable from a working one by name alone. Copying an empty logo
+    /// produces a correctly named, correctly placed badge that renders as nothing, which looks
+    /// exactly like the dealer binding being wrong.
+    /// </para>
+    /// <para>
+    /// Verified against the real Volvo S90 mod that its logo files are <em>not</em> empty
+    /// (<c>volvo_cars.mat</c> 75 non-zero bytes of 75, <c>.tobj</c> 51 of 86, <c>.dds</c> 1777 of
+    /// 5608). An earlier reading of that mod through <c>tar</c> showed all-zero files, but
+    /// <c>tar</c> silently mis-decodes this archive's nonstandard ZIP metadata - the same
+    /// problem <see cref="ScsArchive"/> exists to work around. Files must be read with the
+    /// project extractor, never with a generic ZIP tool, or their contents cannot be trusted.
+    /// </para>
+    /// </summary>
+    private static bool HasRealContent(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists || info.Length == 0)
+                return false;
+
+            // Read the first block only. A zero-filled file is all zeros from byte zero, and a
+            // real material/tobj starts with printable text within the first few bytes, so this
+            // is enough to tell them apart without pulling a whole texture into memory.
+            using var stream = File.OpenRead(path);
+            var buffer = new byte[Math.Min(256, info.Length)];
+            var read = stream.Read(buffer, 0, buffer.Length);
+            return Array.Exists(buffer.Take(read).ToArray(), b => b != 0);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Full path of a <c>.mat</c> the car dealership could use for <paramref name="brand"/>, or
+    /// <c>null</c> if the mod has no usable logo.
+    /// <para>
+    /// Two folders matter and they are not interchangeable. ATS has a <em>car</em> shop and a
+    /// truck dealer, and each resolves its badge from its own folder — confirmed from the game's
+    /// own log:
+    /// <code>
+    /// [car shop] Found logo of brand: dodge
+    /// &lt;ERROR&gt; [car shop] No logo found for brand 'volvo_cars'!
+    /// &lt;ERROR&gt; [resource_task] Can not open '/material/ui/car_brand_logo/volvo_cars.mat'
+    /// </code>
+    /// A truck-era mod ships its logo in <c>material/ui/brand_logo/</c>, which is correct while it
+    /// stays a truck and useless once it is sold as a car. <see cref="EnsureCarBrandLogo"/> is what
+    /// bridges the two.
+    /// </para>
+    /// </summary>
+    private static string? FindBrandLogoMaterial(string root, string brand)
+    {
+        if (string.IsNullOrWhiteSpace(brand))
+            return null;
+
+        var name = SanitizeId(brand) + ".mat";
+
+        // Prefer a car-shop logo if one is already present, so a re-run does not overwrite it
+        // with the truck-era copy.
+        foreach (var folder in new[] { CarBrandLogoFolder, TruckBrandLogoFolder })
+        {
+            var candidate = Path.Combine(root, folder, name);
+            if (File.Exists(candidate))
+                return candidate;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Where the <em>car</em> shop looks for a dealer's badge. Confirmed from the game's log:
+    /// <c>Can not open '/material/ui/car_brand_logo/volvo_cars.mat'</c>.
+    /// </summary>
+    private const string CarBrandLogoFolder = "material/ui/car_brand_logo";
+
+    /// <summary>
+    /// Where the <em>truck</em> dealer looks, and where truck-era mods put their logo. Not
+    /// interchangeable with <see cref="CarBrandLogoFolder"/> — that difference is the whole bug.
+    /// </summary>
+    private const string TruckBrandLogoFolder = "material/ui/brand_logo";
+
+    /// <summary>
+    /// Copies <c>material/ui/brand_logo</c> from the converted mod into a patch archive.
+    /// <para>
+    /// Only that one folder is carried over. A full copy of the mod's material tree would drag
+    /// every texture in it into a patch that is otherwise a few hundred kilobytes, which defeats
+    /// the point of the patch mode. The logo files are small and are the only ones whose
+    /// <em>name</em> the game resolves, so they are the ones that have to be present.
+    /// </para>
+    /// </summary>
+    private static void CopyBrandLogoTree(string root, string patchRoot, Action<string> log)
+    {
+        // Both folders have to travel. car_brand_logo/ is what the car shop reads; brand_logo/ is
+        // still needed because the copied .tobj holds an absolute path back into it.
+        foreach (var folder in new[] { CarBrandLogoFolder, TruckBrandLogoFolder })
+        {
+            var source = Path.Combine(root, folder);
+            if (!Directory.Exists(source))
+                continue;
+
+            var copied = 0;
+
+            foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+            {
+                // Empty or zero-filled logo files are not carried into the patch. A patch is loaded
+                // above the original mod and wins, so shipping an empty brand_logo file would put a
+                // blank badge over the original mod's working one - strictly worse than shipping
+                // nothing and letting the original show through.
+                if (!HasRealContent(file))
+                    continue;
+
+                var target = Path.Combine(patchRoot, folder, Path.GetRelativePath(source, file));
+
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(file, target, overwrite: true);
+                copied++;
+            }
+
+            if (copied > 0)
+                log($"[PATCH] Copied {copied} dealer logo file(s) to patch from {folder}.");
+        }
+    }
+
+    /// <summary>
+    /// Makes the dealer's logo reachable by the car shop, which reads a different folder from
+    /// the truck dealer.
+    /// <para>
+    /// This runs for <em>every</em> conversion, including one that keeps the mod's own brand.
+    /// That was the actual bug: keeping the brand was assumed to be enough because the logo file
+    /// was already in the archive, but it was in <c>material/ui/brand_logo/</c> and the car shop
+    /// only ever looks in <c>material/ui/car_brand_logo/</c>. The mod looked complete and correct;
+    /// it was simply filed under the wrong shop.
+    /// </para>
+    /// <para>
+    /// All three files are copied, not just the <c>.mat</c>. The <c>.mat</c> names its
+    /// <c>.tobj</c> by bare file name and resolves it beside itself, so the <c>.tobj</c> has to
+    /// travel too. The <c>.tobj</c> in turn holds an <em>absolute</em> path to the <c>.dds</c>,
+    /// which is why the original <c>brand_logo/</c> copy is deliberately left in place rather than
+    /// moved — that path still points back into it.
+    /// </para>
+    /// </summary>
+    private static void EnsureCarBrandLogo(
+        string root,
+        string? sourceToken,
+        string dealerId,
+        bool enabled,
+        ConversionStats stats,
+        Action<string> log)
+    {
+        if (sourceToken == null)
+            return;
+
+        // Keeping the mod's own brand is not an opt-in nicety: that is the case the bug was in,
+        // so it always runs. Renaming the dealer *is* opt-in, and the "add the logo" switch owns
+        // it - otherwise turning the switch off would still leave a car-shop logo behind, which is
+        // exactly what the switch promises it will not do.
+        var isRename = !sourceToken.Equals(dealerId, StringComparison.OrdinalIgnoreCase);
+        if (isRename && !enabled)
+            return;
+
+        var sourceMaterial = FindBrandLogoMaterial(root, sourceToken);
+        if (sourceMaterial == null)
+            return;
+
+        if (!HasRealContent(sourceMaterial))
+            return;
+
+        var sourceFolder = Path.GetDirectoryName(sourceMaterial)!;
+        var targetFolder = Path.Combine(root, CarBrandLogoFolder);
+        Directory.CreateDirectory(targetFolder);
+
+        // The truck-era file must survive: the .tobj points at it by absolute path.
+        var needed = new[] { ".mat", ".tobj", ".dds" };
+        var copied = 0;
+
+        foreach (var extension in needed)
+        {
+            var from = Path.Combine(sourceFolder, dealerId + extension);
+
+            // A logo renamed to a new dealer only has files under the source brand's name, so
+            // fall back to those. The .mat still points at the original .tobj by bare name, and
+            // that .tobj still points at the original .dds by absolute path, so all three resolve.
+            if (!File.Exists(from))
+                from = Path.Combine(sourceFolder, sourceToken + extension);
+            if (!File.Exists(from))
+                continue;
+
+            var to = Path.Combine(targetFolder, dealerId + extension);
+
+            // FindBrandLogoMaterial prefers car_brand_logo, so a mod that already ships one makes
+            // sourceFolder and targetFolder the same directory and this becomes
+            // File.Copy(x, x, overwrite: true), which throws IOException on Windows and fails the
+            // whole conversion. The file is already exactly where it needs to be, so skip it.
+            //
+            // The comparison goes through GetFullPath because the folder constants are written with
+            // forward slashes ("material/ui/car_brand_logo"). Path.Combine keeps them verbatim on
+            // Windows, so the same file reached by two different routes is spelled two different
+            // ways and a plain string compare says they differ.
+            if (string.Equals(Path.GetFullPath(from), Path.GetFullPath(to), StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            File.Copy(from, to, overwrite: true);
+            copied++;
+        }
+
+        if (copied == 0)
+        {
+            // Either there was nothing to copy, or every file was already in place because the mod
+            // already shipped car_brand_logo. The transparency pass still has to run in that case:
+            // a pre-existing car-shop logo is exactly the opaque DXT1 case it exists to fix.
+            MakeLogoBackgroundsTransparent(root, stats, log);
+            return;
+        }
+
+        stats.BrandLogosAdded += copied;
+        log($"[LOGO] Wrote {copied} file(s) to material/ui/car_brand_logo/{dealerId}.* so the car dealership " +
+            "shows this brand's badge.");
+
+        // The badge now resolves, but a truck-era logo is usually an opaque DXT1 image with a
+        // black background baked in, and the card shop draws that black plate as a letterbox
+        // around the artwork. Both folders are fixed because both are reachable: the .tobj holds
+        // an absolute path back into brand_logo/, so leaving the truck copy opaque would keep the
+        // box even after the car-shop copy was corrected.
+        MakeLogoBackgroundsTransparent(root, stats, log);
+    }
+
+    /// <summary>
+    /// Rewrites every logo texture in both dealer folders so its background is transparent.
+    /// <para>
+    /// This is cosmetic, so it is deliberately last and deliberately forgiving: a texture it
+    /// cannot improve is reported and left exactly as it was, and one that already has an alpha
+    /// channel is never re-encoded at all. See <see cref="BrandLogoAlpha"/>.
+    /// </para>
+    /// </summary>
+    private static void MakeLogoBackgroundsTransparent(string root, ConversionStats stats, Action<string> log)
+    {
+        foreach (var folder in new[] { TruckBrandLogoFolder, CarBrandLogoFolder })
+        {
+            var directory = Path.Combine(root, folder);
+            if (!Directory.Exists(directory))
+                continue;
+
+            foreach (var texture in Directory.EnumerateFiles(directory, "*.dds"))
+            {
+                if (BrandLogoAlpha.TryMakeTransparent(texture, out var detail))
+                {
+                    stats.BrandLogosMadeTransparent++;
+                    log($"[LOGO] {folder}/{Path.GetFileName(texture)}: {detail} (DXT1 -> DXT5), so the badge " +
+                        "has no black box around it.");
+                }
+                else if (detail.StartsWith("already", StringComparison.Ordinal))
+                {
+                    log($"[LOGO] {folder}/{Path.GetFileName(texture)}: {detail}.");
+                }
+                else if (detail.Contains("not a format"))
+                {
+                    log($"[INFO] {folder}/{Path.GetFileName(texture)} {detail}.");
+                }
+                else
+                {
+                    log($"[INFO] Left {folder}/{Path.GetFileName(texture)} alone: it {detail}.");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gives a renamed dealer the mod's own logo.
+    /// <para>
+    /// The game resolves a dealer's logo as <c>material/ui/brand_logo/&lt;dealer&gt;.mat</c>, so
+    /// renaming the dealer silently loses it. The fix is a single extra file: the source
+    /// <c>.mat</c> copied verbatim under the new brand name.
+    /// </para>
+    /// <para>
+    /// Copying it unchanged is deliberate, and the chain is two links with *different* rules —
+    /// confirmed by dumping the bytes of a real <c>.tobj</c>:
+    /// <list type="bullet">
+    /// <item><c>.mat</c> → <c>.tobj</c> is a <b>bare file name</b>
+    /// (<c>texture : "volvo_cars.tobj"</c>), resolved next to the <c>.mat</c>.</item>
+    /// <item><c>.tobj</c> → <c>.dds</c> is an <b>absolute path baked into the compiled object</b>,
+    /// e.g. <c>/material/ui/brand_logo/volvo_cars.dds</c> — a length-prefixed string at a fixed
+    /// offset near the end of the file.</item>
+    /// </list>
+    /// <para>
+    /// So a copy works precisely because the mod still ships the original <c>.tobj</c> and
+    /// <c>.dds</c> under their own names, and the new <c>.mat</c> points at them. Renaming the
+    /// <c>.tobj</c> or <c>.dds</c> would mean rewriting that embedded path, whose layout is not a
+    /// documented format. The cost is that a renamed dealer always displays the <em>original</em>
+    /// brand's artwork, which is the intent anyway.
+    /// </para>
+    /// </para>
+    /// </summary>
+    private static void CopyBrandLogoForDealer(
+        string root,
+        string? sourceToken,
+        string dealerId,
+        bool enabled,
+        ConversionStats stats,
+        Action<string> log)
+    {
+        if (sourceToken == null)
+            return;
+
+        if (sourceToken.Equals(dealerId, StringComparison.OrdinalIgnoreCase))
+            return; // Dealer kept the mod's brand, so its logo is already found by name.
+
+        if (!enabled)
+        {
+            log($"[INFO] Dealer renamed to '{dealerId}' without a logo; it will show whatever the game " +
+                $"has for '{dealerId}', or none.");
+            return;
+        }
+
+        var sourceMaterial = FindBrandLogoMaterial(root, sourceToken);
+        if (sourceMaterial == null)
+        {
+            log($"[WARNING] This mod has no material/ui/brand_logo/{sourceToken}.mat, so the '{dealerId}' " +
+                "dealer will have no logo unless the base game already ships one for it.");
+            return;
+        }
+
+        // A file that is present but empty or zero-filled is a placeholder the mod author never
+        // filled in, not a usable logo. Copying it would report success and still show nothing,
+        // which looks exactly like the binding being wrong. Say what is actually wrong instead.
+        if (!HasRealContent(sourceMaterial))
+        {
+            stats.EmptyBrandLogos++;
+            log($"[WARNING] material/ui/brand_logo/{sourceToken}.mat is empty (zero bytes). The mod author " +
+                $"shipped a placeholder, not a logo, so the '{dealerId}' dealer cannot show this mod's badge. " +
+                "Supply a real brand_logo .mat/.tobj/.dds with the mod to fix this.");
+            return;
+        }
+
+        var logoFolder = Path.Combine(root, "material", "ui", "brand_logo");
+        Directory.CreateDirectory(logoFolder);
+
+        var targetMaterial = Path.Combine(logoFolder, dealerId + ".mat");
+        if (File.Exists(targetMaterial))
+        {
+            log($"[LOGO] material/ui/brand_logo/{dealerId}.mat already exists in this mod; left as it is.");
+            return;
+        }
+
+        File.Copy(sourceMaterial, targetMaterial);
+        stats.BrandLogosAdded++;
+        log($"[LOGO] Added material/ui/brand_logo/{dealerId}.mat so the '{dealerId}' dealer shows the " +
+            $"{sourceToken} logo.");
     }
 
     private static List<VehicleInfo> DiscoverVehicles(string carRoot)
@@ -903,6 +1740,32 @@ public static class ModConverter
             log($"[WARNING] car_dealer/{dealerId} is missing.");
         }
 
+        // A car whose unit carries no brand component has no dealership of its own, and the
+        // game files it under whichever brand happens to claim the unmatched definition.
+        foreach (var dataFile in Directory.EnumerateFiles(carDef, "data.sii", SearchOption.AllDirectories))
+        {
+            string unitText;
+            try { unitText = DecodeText(File.ReadAllBytes(dataFile)); }
+            catch { continue; }
+
+            var unit = Regex.Match(unitText, @"(?im)^\s*accessory_truck_data\s*:\s*(\S+)")
+                .Groups[1].Value;
+
+            if (unit.Length == 0)
+                continue;
+
+            var parts = unit.Split('.');
+            if (parts.Length < 3)
+            {
+                var issue =
+                    $"The car definition {GetRelativePathForLog(dataFile)} is named '{unit}', " +
+                    "which carries no brand component, so ATS cannot match it to a dealership " +
+                    $"and will list it under an unrelated brand. Expected 'vehicle.{dealerId}.<model>'.";
+                issues.Add(issue);
+                log("[WARNING] " + issue);
+            }
+        }
+
         var stalePathPattern = new Regex(assetsMoved || isPatchMode
             ? @"(?i)(/|\\)?def/vehicle/truck(/|\\)|(/|\\)vehicle/truck(/|\\)|(^|/|\\)truck_dealer(/|\\)"
             : @"(?i)(/|\\)?def/vehicle/truck(/|\\)|(^|/|\\)truck_dealer(/|\\)");
@@ -976,6 +1839,11 @@ public static class ModConverter
         report.AppendLine($"Files replaced from an earlier patch: {stats.FilesReplacedFromEarlierPatch}");
         report.AppendLine($"Dealer files converted: {stats.DealerFilesConverted}");
         report.AppendLine($"Reference dealer files added: {stats.DealerFilesCreatedFromReference}");
+        report.AppendLine($"Cars assigned to dealer '{dealerId}': {stats.CarsBrandscoped}");
+        report.AppendLine($"Mod's own brand token: {(stats.SourceBrandToken.Length == 0 ? "(none)" : stats.SourceBrandToken)}");
+        report.AppendLine($"Dealer logo files added: {stats.BrandLogosAdded}");
+        report.AppendLine($"Dealer logo textures made transparent: {stats.BrandLogosMadeTransparent}");
+        report.AppendLine($"Global _nameless units namespaced: {stats.AnonymousUnitsNamespaced}");
         report.AppendLine($"Validation issues: {issues.Count}");
         report.AppendLine();
 
@@ -1001,11 +1869,91 @@ public static class ModConverter
         report.AppendLine("- This tool converts text definitions and archive layout; it does not rebuild binary model files.");
         report.AppendLine("- The supplied Volvo S90 archive uses nonstandard ZIP header metadata; the custom extractor deliberately uses central-directory data so those SCS packages can still be read.");
         report.AppendLine("- A Road Trip reference mod can provide framework files whose exact structure cannot safely be inferred from a truck-era dealer file.");
+        report.AppendLine("- '_nameless.' unit names are global in SCS. Two mods using the same one replace each other, so this conversion renames them to carry a unique prefix.");
+        report.AppendLine("- A car's dealership comes from the middle component of its accessory_truck_data unit (base game: vehicle.ford.f150_23 is sold by car_dealer/ford). This conversion renames the unit to vehicle." + dealerId + ".<model> so the car appears under the dealer you chose.");
+        report.AppendLine("- A dealer's logo is resolved by name, and the car shop and the truck dealer read DIFFERENT folders: material/ui/car_brand_logo/<brand>.mat and material/ui/brand_logo/<brand>.mat. A converted car is sold by the car shop, so its logo has to be in car_brand_logo. A truck-era mod only ships it under brand_logo, which is why the badge was missing.");
+        report.AppendLine("- A truck-era logo is also usually an opaque DXT1 image with the black background baked into the pixels, which the dealership draws as a black box around the artwork. DXT1 has no alpha channel, so the box cannot be removed by the game. Textures like that are re-encoded as DXT5 with the border-connected background made transparent, which is the format the base game's own badges use. Interior dark pixels are left alone, so black-and-white artwork such as the BMW roundel keeps its black.");
+        if (stats.BrandLogosAdded > 0)
+        {
+            report.AppendLine();
+            report.AppendLine($"Dealer logo files added ({stats.BrandLogosAdded}):");
+            report.AppendLine($"- material/ui/car_brand_logo/{dealerId}.mat (+ .tobj and .dds where present). The original truck-era logo is kept, because the .tobj holds an absolute path back to it.");
+        }
+        else if (stats.EmptyBrandLogos > 0)
+        {
+            report.AppendLine($"- The mod's own logo file exists but is empty (zero bytes). It is a placeholder " +
+                "the mod author never filled in, so this vehicle cannot show a badge from it. This is a " +
+                "problem with the mod's files, not with the conversion; no logo was copied.");
+        }
+        else if (stats.SourceBrandToken.Length > 0 &&
+                 !stats.SourceBrandToken.Equals(dealerId, StringComparison.OrdinalIgnoreCase))
+        {
+            report.AppendLine($"- The dealer was renamed from '{stats.SourceBrandToken}' but no logo was added. If the '{dealerId}' dealer should show this mod's logo, re-run with dealer-logo copying enabled.");
+        }
+        else if (stats.SourceBrandToken.Length > 0)
+        {
+            report.AppendLine($"- The dealer kept the mod's own brand '{dealerId}', so the game finds its existing logo by name and no copy was needed.");
+        }
+        if (stats.AnonymousUnitNames.Count > 0)
+        {
+            report.AppendLine();
+            report.AppendLine($"Namespaced unit names ({stats.AnonymousUnitNames.Count}):");
+            foreach (var name in stats.AnonymousUnitNames.OrderBy(n => n, StringComparer.Ordinal))
+                report.AppendLine($"- {name}");
+        }
+
+        // --- What was written -------------------------------------------------------
+        // The duplication problem this guards against is two *separate* patches for the same
+        // mod both being enabled, each defining the same unit paths. The converter writes
+        // one archive and never sees the other, so it cannot detect that itself. Listing
+        // every path here lets the user grep their mod folder for a collision.
+        report.AppendLine();
+        report.AppendLine($"Output archive: {GetOutputFile(settings)}");
+
+        var writtenPaths = CollectWrittenDefinitionPaths(root);
+        report.AppendLine();
+        report.AppendLine($"Written definition paths ({writtenPaths.Count}):");
+        foreach (var path in writtenPaths)
+            report.AppendLine($"- {path}");
+
+        report.AppendLine();
+        report.AppendLine("IMPORTANT - duplicate patches:");
+        report.AppendLine("- If another Road Trip patch for this same vehicle is also enabled in the mod");
+        report.AppendLine("  folder, the game will mount two definitions of the same units and the car can");
+        report.AppendLine("  appear twice or behave oddly. Enable only ONE patch per vehicle.");
+        report.AppendLine("- To check, list the paths above and look for the same vehicle paths inside any");
+        report.AppendLine("  other *_roadtrip*.scs in your mod folder.");
 
         File.WriteAllText(
             Path.Combine(root, "roadtrip_conversion_report.txt"),
             report.ToString(),
             new UTF8Encoding(false));
+    }
+
+    /// <summary>
+    /// Every definition file written under <c>def/</c>, as archive-relative paths with forward
+    /// slashes, sorted so two reports can be diffed or compared by eye.
+    /// </summary>
+    private static IReadOnlyList<string> CollectWrittenDefinitionPaths(string root)
+    {
+        var defRoot = Path.Combine(root, "def");
+        if (!Directory.Exists(defRoot))
+            return Array.Empty<string>();
+
+        try
+        {
+            return Directory.EnumerateFiles(defRoot, "*", SearchOption.AllDirectories)
+                .Select(path => Path.GetRelativePath(root, path).Replace('\\', '/'))
+                .OrderBy(path => path, StringComparer.Ordinal)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            // Listing paths is a convenience. It must never fail a conversion that otherwise
+            // succeeded, so a read error downgrades to no list rather than throwing.
+            System.Diagnostics.Debug.WriteLine($"Could not list written paths: {ex.Message}");
+            return Array.Empty<string>();
+        }
     }
 
     private static string FindModRoot(string extracted)

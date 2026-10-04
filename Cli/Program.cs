@@ -10,7 +10,8 @@ for (var i = 0; i < args.Length; i++)
         return Usage($"Unexpected argument '{arg}'.");
 
     var name = arg[2..];
-    if (name is "no-move-assets" or "no-dealer" or "defs-only" or "patch-only" or "keep-cameras" or "help")
+    if (name is "no-move-assets" or "no-dealer" or "defs-only" or "patch-only" or "keep-cameras"
+        or "custom-dealer" or "no-logo" or "help")
     {
         flags.Add(name);
         continue;
@@ -53,9 +54,22 @@ var settings = new ConversionSettings(
     !flags.Contains("no-dealer"),
     flags.Contains("patch-only"),
     vehicleType,
-    !flags.Contains("keep-cameras"));
+    !flags.Contains("keep-cameras"),
+    NamespaceAnonymousUnits: true,
+    UseSourceBrandToken: !flags.Contains("custom-dealer"),
+    RenameBrandLogo: !flags.Contains("no-logo"));
 
-var result = ModConverter.Run(settings, Console.WriteLine, _ => { });
+ConversionResult result;
+try
+{
+    result = ModConverter.Run(settings, Console.WriteLine, _ => { });
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine("[EXCEPTION] " + ex);
+    return 3;
+}
+
 Console.WriteLine(result.Success
     ? $"[SUCCESS] Converted file: {result.OutputFile}"
     : $"[COMPLETE] {result.OutputFile} created with {result.Issues.Count} validation issue(s).");
@@ -79,8 +93,10 @@ static int Usage(string? error)
     Console.WriteLine("""
         Usage:
           ats-roadtrip-convert --input <mod.scs> --output <folder> [--dealer <id>] [--reference <mod.scs>]
-                               [--no-move-assets] [--no-dealer] [--patch-only] [--keep-cameras]
-                               [--vehicle-type sedan|hatchback|pickup|van]
+          
+          Dealer branding (default, recommended): the mod keeps its own brand and therefore
+          its own dealership logo. --custom-dealer instead renames the dealer to --dealer <id>;
+          the mod's logo is then copied to that name too, unless --no-logo is given.
           ats-roadtrip-convert --extract <archive.scs> --output <folder> [--defs-only]
         """);
     return error == null ? 0 : 1;

@@ -1,6 +1,13 @@
-# ATS American Roadtrip Car Patcher — v1.3.8 / v1.3.9 plan
+# ATS American Roadtrip Car Patcher — roadmap
 
-Status: v1.3.7 released (tag `v1.3.7`, commit `29fdac3`). This document is **uncommitted**.
+Status: **v1.3.9 released** (tagged and published). **v1.3.9.1 and v1.4 are open.** v1.3.9
+shipped the authentication removal, launch page, About tab, layout fixes, dealer branding and
+badges, the car-duplication fix, the `invalid_vehicle` fix, and the transparent-badge work.
+
+The badge work in v1.3.9 was verified at the file level, not visually: the DXT1 → DXT5
+conversion is byte-checked and provably lossless to the artwork, but nobody has yet seen the
+resulting badge in the car dealership. Items 8–9 below carry the cosmetic remainder forward to
+v1.4, along with the reason it was not done in v1.3.9.
 
 ## Working rules (agreed)
 
@@ -15,6 +22,13 @@ Status: v1.3.7 released (tag `v1.3.7`, commit `29fdac3`). This document is **unc
    - `Program.AppVersion` must match the tag exactly.
    - Push explicitly: `git push origin <branch>:<branch>` and `...:main`. A bare
      `git push` targets `origin/main` because that is the branch's upstream.
+   - **Do not invent a version number for unreleased work.** v1.3.9 is still in progress, so
+     everything built this cycle belongs to v1.3.9's changelog section. Bumping `AppVersion`
+     to a speculative future version (it was briefly set to `v1.4.2`) makes the launch page
+     announce a release that does not exist, and it contradicts the release rules directly
+     above. If a fix needs its own heading while its parent release is still open, put it in
+     the parent's section instead and keep the planned future work in the deferred lists at
+     the bottom of this file.
 
 ---
 
@@ -119,12 +133,12 @@ tag or release until the maintainer has seen this list.**
 | 7 | Orphaned doc comments in `Program.cs` | **Fixed.** All removed. `Program.cs` is 86 → 32 lines. Compiler proof: **CS1587 14 → 0**. |
 | 8 | CLI outside the solution | **Fixed.** `Cli/ATSRoadTripConverter.Cli.csproj` added to `ATSRoadTripConverter.sln`, so the health check now covers it. |
 | 9 | Backwards collision log message | **Fixed** in `MergeTree`; it now names both files correctly. |
-| 1 | Duplicated boilerplate header | **Fixed.** Stale banner + two mis-placed comment blocks removed from all 16 files. |
+| 1 | Duplicated boilerplate header | **Fully fixed in v1.3.9.** The stale banner and the two mis-placed comment blocks were removed earlier, but the 8 duplicated `using` lines survived. All 10 app files now carry only the `using` lines they actually use — 80 lines down to 12, each proven necessary by the compiler. See Tranche 2. |
 | 2 | Mixed encoding | **Fixed.** All 17 files are now UTF-8 **no BOM**, CRLF-only, zero bare LF. |
 | 5 | `Debug.WriteLine` in `Settings.Save` | Comment corrected; the call is kept (see note below). |
 | 3 | `Margin_` naming | **Not done — reverted.** The trailing underscore is *deliberate*: `Margin` collides with the inherited `Form.Margin` and fails to compile with CS0108. Leave it, and add a short comment so the next health check does not "fix" it again. |
 | 11 | No CI build/test gate | **Deferred** — workflow change, needs maintainer sign-off. |
-| 4 | Three `MessageBox.Show` sites | Deferred to the polish pass. |
+| 4 | Three `MessageBox.Show` sites | **Done in v1.3.9** via a `ShowNotice` helper. The fourth hit, in `LocalUpdater.cs`, is PowerShell script text and intentionally left. |
 | 6 | Empty `catch` blocks | Reviewed; all four are intentional best-effort. No change. |
 | 10 | Work folder deleted on failure | Not touched here — it belongs to Track C item 2. |
 
@@ -429,6 +443,128 @@ concluding anything.
 
 Carried over, then additions.
 
+### Progress
+
+Working rule 2 applied: the health check ran green **before** anything was touched, so
+anything found later is unambiguously ours. Baseline (2026-10-03, at `a389c4d`):
+solution build with `-p:TreatWarningsAsErrors=true --no-incremental` → 0 warnings / 0 errors;
+`ModConverterVerify` → 31 checks; `LocalUpdaterSmokeTest` → pass.
+
+#### Tranche 1 — landed, uncommitted
+
+**Item 16, settings schema version and migration.** `SettingsSchema.cs` is new and
+deliberately dependency-free, because the settings migration has to be verifiable headlessly
+while `Settings.cs` itself is tied to WinForms through `Theme` and `AuthSession`. `ModConverterVerify`
+and the CLI both link only dependency-free files, and this is what keeps it that way.
+
+- `AppSettings.SchemaVersion` added; `CurrentVersion` is 1.
+- The dead `ThemeMode` property is **removed**. Its value is read once from the *raw JSON* by
+  `SettingsSchema.ReadLegacyThemeMode`, because the deserializer silently ignores properties it
+  no longer knows — so a typed property was the only thing that could still see it.
+- A v0 file is migrated on load and then stamped with version 1, so the migration runs once.
+  A stored `ThemeName` always wins, which is what stops a v1 file being dragged back to a legacy
+  preference on every launch.
+- Per the roadmap, 1.3.9 only *adds* the version. No settings **format** break.
+
+**Item 13, broadened `ModConverterVerify`** (31 → **49** checks). Covers the two preserve-on-
+collision paths and the migration, so the Track B class of bug cannot come back:
+
+- *Reference dealer merging.* `CopyMissingReferenceFramework` is the **second** such path — the
+  original diagnosis wrongly suspected the dealer `index.sii` merge was involved. It is now
+  covered, including a genuine same-folder/same-name collision where the mod's own translated
+  definition must beat the reference copy.
+- *Truck→car migration.* Both trees are removed afterwards, the dealer migrates with no
+  `truck` paths left in it, and a car folder whose name does **not** match is left completely
+  alone — the same vehicle-name scoping decided for the re-patch fix.
+
+**Proven, not assumed.** The reference-merge check was mutation-tested by forcing
+`CopyMissingReferenceFramework` to overwrite unconditionally: the suite aborts with
+`IOException ... already exists` at `ModConverter.cs:687` and exits non-zero. A first attempt at
+this proof *passed*, which exposed a flaw in the test rather than the code — the fixture used a
+different dealer folder, so no collision existed and the check could not bite. The fixture now
+collides for real.
+
+**Correction to a test fixture, not the product.** While adding the migration checks I asserted
+that a converted car becomes `accessory_car_data`. It does not, and it should not:
+`accessory_car_data` is **not a real SCS unit type** (it is absent from the documented
+`vehicle_accessory` list, and the wiki page 404s). Cars in ATS are defined with
+`accessory_truck_data`, so the converter is already correct. The check now pins that behaviour
+and asserts the invented unit type is never emitted; two pre-existing fixtures that used
+`accessory_car_data` were corrected to match.
+
+#### Tranche 2 — roadmap Track A finding 1 finished (boilerplate `using` block)
+
+Finding 1 was recorded as **"Fixed"** after v1.3.8, but only its comment half was: the
+status says "stale banner + two mis-placed comment blocks removed". The recommendation also
+said *"strip each file down to the `using` lines it actually needs"*, and that never landed —
+the same 8 `using` lines were still sitting on all 10 app files.
+
+`Settings.cs:1`, the line quoted in review, was genuinely dead: `Debug.WriteLine` there is
+called fully-qualified as `System.Diagnostics.Debug.WriteLine`, so the `using` was unused.
+
+The 9 namespaces are not all boilerplate either. `ImplicitUsings=enable` already supplies
+`System`, `System.Collections.Generic`, `System.Drawing`, `System.IO`, `System.Linq`,
+`System.Net.Http`, `System.Threading`, `System.Threading.Tasks` and `System.Windows.Forms`
+(verified in `obj/.../ATSRoadTripConverter.GlobalUsings.g.cs`). That is why the whole block
+could go: `Program.cs`, `SignInForm.cs` and `ThemedConfirmForm.cs` now need **zero** `using`
+lines at all.
+
+**80 boilerplate lines → 12 real ones**, and every one of the 12 was proven needed by removing
+it individually and confirming the build fails:
+
+| File | Kept |
+| --- | --- |
+| `Settings.cs` | `System.Text.Json`, `System.Text.Json.Serialization` |
+| `AuthSession.cs` | `System.Runtime.InteropServices`, `System.Text.Json` |
+| `GitHubSignIn.cs` | `System.Diagnostics`, `System.Text.Json` |
+| `Controls.cs`, `Theme.cs` | `System.Drawing.Drawing2D` |
+| `ConverterForm.Layout.cs` | `System.Drawing.Drawing2D`, `System.Runtime.InteropServices` |
+| `ConverterForm.Conversion.cs` | `System.Diagnostics`, `System.Drawing.Text` |
+| `Program.cs`, `SignInForm.cs`, `ThemedConfirmForm.cs` | *(none)* |
+
+Verified: solution build `--no-incremental -p:TreatWarningsAsErrors=true` → 0 warnings / 0
+errors; `ModConverterVerify` 49; `SettingsMigrationVerify` 25; `LocalUpdaterSmokeTest` pass.
+`git diff` outside the `using` lines shows only the intended v1.3.9 work. All 11 touched files
+remain UTF-8 **no BOM**, CRLF, zero bare LF.
+
+**Process note — trust the compiler per-file, never across a set.** Stripping all 8 namespaces
+from all 10 files at once reported **22** errors and none of them in `Settings.cs`, even though
+`Settings.cs` was left with zero `using` lines and calls `JsonSerializer`. Building `Settings.cs`
+in that stripped state *alone* reports 4 errors. So a bulk strip produced an incomplete picture,
+and the required set had to be discovered one file at a time. Any future bulk-`using` cleanup
+must confirm each file in isolation, exactly as done here.
+
+**Process note — do not script file rewrites that build in a loop.** A throwaway script that
+removed one `using` at a time and rebuilt per iteration was interrupted mid-run and left
+`GitHubSignIn.cs` and `ConverterForm.Layout.cs` at **0 bytes**. They were recovered from the
+pre-edit backups taken beforehand (which is the only reason this was cheap). The script was
+deleted rather than kept. Take backups first, write with an explicit `UTF8Encoding($false)`, and
+re-verify sizes and content afterwards — the v1.3.8 health check lost 15 files the same way.
+
+**Status at the end of the build — replaces a stale "Not started" line.** The authoritative split
+across the numbered items below:
+
+- **Done:** 6 (update-available prompt), 7 (remember the last page), 13 (broadened
+  `ModConverterVerify`, 31 → 49 in Tranche 1), 14, 15, 16, 18, and the "what's new" half of 21 —
+  plus the dealer-branding, dealership-logo and unit-name-namespace work recorded in the notes below.
+- **Moot, not deferred:** 3 (membership verification — resolved by deleting the gate, not by
+  building a backend) and 4 (`InfoDot` — investigated and retracted as a non-bug).
+- **Moved to v1.4:** 11 (XML-driven settings pages) and 20 (DPI-correct painting).
+- **Deferred to v1.4:** 12 (reverse camera), recorded as item 3 in that section's
+  `### Deferred from v1.3.9` list.
+- **Still open in v1.3.9, not deferred:** **nothing.** Items 6 and 7 were the last two, and both
+  landed. v1.3.9's code scope is closed; what remains is the verification list below and the
+  commit/tag.
+
+- **Deferred to v1.4.2 as the hardest remaining work:** 5, 8, 9, 17 and 19. The reasoning for each is
+  inline at its item, and they are gathered in the v1.4.2 section.
+
+Note for item 5: `SharpCompress` **0.37.2 — the version implied by the roadmap — restores but
+carries a live advisory** (`GHSA-6c8g-7p36-r338`, path traversal in `WriteToDirectory`). The
+patched line is **≥ 0.48.0**, which restores clean. Use that, not 0.37.x. Adding it needs the
+maintainer's approval per working rule 3 — and item 5 is deferred partly because it needs a
+dependency decision that should not have to be rushed.
+
 ### Deferred from v1.3.8
 
 1. **Dry-run / preview mode** — report file count and patch manifest, write nothing.
@@ -471,10 +607,20 @@ several wrong "the DLC has no dashboard" conclusions before the discrepancy was 
 copy silently — use `-Game` for anything that shipped with the game.
 
 ### Correctness and safety
-3. **Real membership verification.** `AuthSession.HasGitHubAccess` is currently just
-   `IsSignedIn`, so *any* authenticated GitHub account unlocks the GitHub theme tier.
-   `HasKoFiAccess` is still `=> false`. Both need a real backend check. **Biggest gap
-   between what the UI promises and what the app enforces.**
+3. ~~**Real membership verification.**~~ **Moot — resolved by removal, not by a backend.**
+   This was "`AuthSession.HasGitHubAccess` is just `IsSignedIn`, so *any* authenticated GitHub
+   account unlocks the theme tier". It was a real hole *while a paid tier existed*.
+   Investigation of the three candidate checks showed only one was even viable:
+   - **Stargazers** — public endpoint, works, but would have meant gating 9 of 12 themes on
+     starring the repo, which contradicts "this tool is free".
+   - **Collaborators** — the list endpoint requires push access to the repo, so it can only
+     ever be true for maintainers. Worthless as a user-facing gate.
+   - **GitHub Sponsors** — the sponsorships endpoint only returns *your own* sponsors. You
+     cannot query whether an arbitrary user sponsors you. Not usable at all.
+   Rather than build a backend to protect something free, the gate was deleted. All 12 themes
+   are unlocked, `AuthSession.cs` / `GitHubSignIn.cs` / `SignInForm.cs` are deleted, and the
+   `ThemeAccess` tier enum is gone from `Theme.cs`. The startup window that existed only for
+   sign-in became the launch page (item 21).
 4. ~~**`InfoDot` is hardcoded blue.**~~ **Not a bug — checked and retracted.** `InfoDot`
    paints `Theme.Info`, and `Theme.Info` is a deliberate semantic palette constant
    (`Color.FromArgb(110, 168, 254)`) sitting alongside `Success`, `Warning` and `Error`.
@@ -487,12 +633,45 @@ copy silently — use `-Game` for anything that shipped with the game.
    `System.IO.Compression` cannot read encrypted zips (add `SharpCompress`).
    Scope note: this is for the user's own file with their own password. Out of scope
    remains decryption of SCS `<Encrypted/>` payloads.
+   **Deferred to v1.4.2.** The largest open item: a new dependency, a new password-prompt UI,
+   and a new archive path, with a live security advisory to handle correctly. Three separate
+   pieces of work where one would do, and it cannot be built incrementally without the
+   dependency first.
 
 ### Features
-6. "Update available" prompt at startup — the check now works but only logs a line.
-7. Remember the last page — only window geometry landed so far.
-8. "Report a problem" bundle — zip the log + settings + version.
-9. Backup naming / restore UX — surface existing `.bak` files and allow restoring one.
+6. ~~**"Update available" prompt at startup**~~ **Done.** The check worked but only wrote a log
+   line, which nobody reads at startup. It now raises a themed prompt offering to open Settings,
+   where the existing GitHub installer already lives — deliberately a *notification*, not an action,
+   because installing closes the app and a modal that silently kills the running converter would be
+   a surprise. Dismissing it stores the release **tag** (`DismissedUpdateTag`) rather than a
+   boolean, so the same version is not offered twice but a genuinely newer one still is.
+7. ~~**Remember the last page**~~ **Done.** Now covers Settings *and* Changelog, plus which of the
+   four Settings categories was open. New preference "Reopen the last page on launch", **off by
+   default** — silently opening on Settings instead of the converter would surprise people, so it
+   is opt-in rather than automatic.
+   - `MainPage` is its own dependency-free file, not nested in `ConverterForm`. It is persisted in
+     the settings file, and nesting it in the Form would make `Settings.cs` depend on the whole
+     WinForms interface — the coupling `SettingsSchema`, `ReleaseNotes` and `MainLayout` exist to
+     avoid. It is linked into SettingsMigrationVerify for that reason.
+   - **`MainPageJsonConverter` is load-bearing, and for a non-obvious reason.** The first draft
+     assumed `JsonSerializer` *throws* on an out-of-range enum number. Measured, it does not: `"99"`
+     deserialises to an undefined member that `Load` will happily store. What *does* throw is a
+     **string** in that field, and because the settings file is deserialised as one object, that
+     throws away the user's theme, accent colour, vehicle types and everything else. The converter
+     does both jobs: turn a throw into a fallback, and reject a number that is not a defined member.
+     The test asserts the real behaviour of both halves, so the reasoning cannot rot.
+   - `RecordLastPage` deliberately does **not** save to disk. The Settings page holds unsaved edits
+     that its own Save button owns, and saving on a page switch would write a half-edited page
+     behind the user's back.
+8. **Deferred to v1.4.2.** "Report a problem" bundle — zip the log + settings + version. Deferred
+   with item 17 because it depends on it: there is no log file to bundle until logs are written to
+   one. Cheap once 17 exists, so they belong together in the same release rather than shipping a
+   bundle button that can only ever attach an empty log.
+9. **Deferred to v1.4.2.** Backup naming / restore UX — surface existing `.bak` files and allow
+   restoring one. Deferred because restoring is the only genuinely **destructive** feature in this
+   list: it overwrites a user's mod, so it needs an explicit file list, a real confirmation step,
+   and a decision about what happens to the `.bak` afterwards. That is safety design, not a menu
+   item, and it does not belong in a release that is otherwise bug-fix shaped.
 12. **Reverse camera on converted cars.** A Road Trip DLC car (the 2023 Ford F-150) shows a
     rear camera feed on its infotainment screen when reversing; a converted truck does not.
     Traced as far as the data allows:
@@ -546,52 +725,875 @@ several wrong "the DLC has no dashboard" conclusions before the discrepancy was 
 copy silently — use `-Game` for anything that shipped with the game.
 
 ### Architecture
-11. **XML-driven settings pages.** The settings tabs are now genuinely data-shaped
-    (see the `AddOption` helper). Schema-validated, so adding a setting becomes a
-    small XML edit instead of ~40 lines of C#. This is what makes later settings
-    work far cheaper.
+11. ~~**XML-driven settings pages.**~~ **Moved to v1.4.** The scope is right but the risk is
+    wrong for 1.3.9: it introduces an external settings *schema* to validate, and a broken
+    one costs users their preferences. v1.3.9 ships the schema **version** that makes such a
+    move safe; v1.4 does the move. See the v1.4 section.
 
 ### Engineering
 13. **Broaden `ModConverterVerify`** — dealer index merging and the truck→car
     migration, so the Track B class of bug cannot return.
 
 ### Suggested ranking
-1. **Item 3** (real membership verification) first — it is a genuine hole in the gating,
-   and any authenticated GitHub account currently unlocks the paid theme tier.
+1. ~~**Item 3** (real membership verification)~~ — **cancelled.** There is no tier left to verify
+   after the Ko-fi removal and the sign-in removal; see item 3 for the full reasoning.
 2. **Item 4** (the three `MessageBox.Show` call sites) — visible inconsistency, cheap.
-3. **Item 5** (password-protected `.scs`) — users hit this and currently dead-end.
-4. **Item 11** (XML-driven settings) — pays for itself by making later settings cheap.
-5. Everything else in listed order.
+4. **Item 5** (password-protected `.scs`) — users hit this and currently dead-end.
+5. Everything else in listed order. (Item 11 was ranked here previously; it moved to v1.4.)
 
 ### Polish and consistency (added)
-14. **Replace the remaining system dialogs.** Three `MessageBox.Show` call sites are
-    left in `ConverterForm.Conversion.cs` (lines 460, 494, 1241 — GitHub update failure,
-    hot-reload block, invalid accent colour). The themed `ThemedConfirmForm` already
-    exists and is preferred; consistency pass, and these will then match the theme.
-15. **Main window does not fit small screens.** `ClientSize` is a fixed 900px tall with
-    a 700px `MinimumSize`, so on a 768px-tall display the log card is clipped off the
-    bottom. Make the main window scroll or compact, and verify at 1366x768.
-16. **Settings schema version and migration.** `AppSettings.ThemeMode` is a live legacy
-    field still read by the migration path. Introduce an explicit schema version and
-    drop the dead field. This is the prerequisite that makes a v2.0 settings break safe.
-17. **Save log to file / open logs folder.** Copy-to-clipboard exists; saving a dated
-    log next to the converted output is what people actually attach to a bug report.
-18. **Docs pass.** The repository is public now, so the README should describe the
-    current feature set (tiers, settings, updater) rather than the older feature list.
+14. ~~**Replace the remaining system dialogs.**~~ **Done.** All three `MessageBox.Show` call
+    sites in `ConverterForm.Conversion.cs` (GitHub update failure, hot-reload block, invalid
+    accent colour) now go through a `ShowNotice` helper backed by `ThemedConfirmForm`, so every
+    notice matches the palette and the dark title bar. The pre-existing inline `Ko-fi theme`
+    notice was folded into the same helper so the file is internally consistent.
+    - **One `MessageBox` deliberately remains**, at `LocalUpdater.cs:182`. It is not C# UI: it
+      is inside the generated PowerShell script (the raw string literal ends at line 189) and
+      runs in a separate `powershell.exe` **after the app has exited**. There is no WinForms
+      app there to theme, and it is the exact "modal error dialog" path v1.3.8 Track D verified.
+      Changing it would put a proven path at risk for no gain.
+    - **Manually verified.** The maintainer triggered the invalid-accent path (`#GG0000` in the
+      Accent Color field, then Save) and confirmed the themed dialog appears. That is the one
+      changed site reachable on demand, and it exercises the shared `ShowNotice` helper the
+      other two sites use. The GitHub-update and hot-reload notices are **not** separately
+      click-through-verified — they differ only in owner and message.
+15. ~~**Main window does not fit small screens.**~~ **Done.** The fixed 900px `ClientSize` with a
+    700px `MinimumSize` is gone. What made this unavoidable rather than a tuning problem: the
+    cards above the log need **816px** (`100` header + `222` files + `352` options + `86` action,
+    plus margins), so on a 768px display there is no window size that fits — a 768px screen has
+    roughly 728px of working area. Resizing alone could never have solved it.
+    - The window now opens clamped to `Screen.PrimaryScreen.WorkingArea`, so it never starts
+      taller than the screen.
+    - `AutoScroll` is on, so overflow is **scrolled rather than clipped**. The log card holds a
+      `MinimumLogCardHeight` floor instead of shrinking to nothing or going negative.
+    - The log card and the log box are no longer bottom-anchored. Bottom anchoring fights the
+      scroll extent; `ResizeMainContent()` (called from `OnResize`) owns the height instead.
+    - `MinimumSize` dropped to `min(560, workingArea.Height)`, so the window can still open on a
+      short display.
+    - `RestoreWindowLayout` now clamps a **saved** height to the working area of the screen it is
+      being restored onto. Without this, a window sized on a large monitor reopens too tall on a
+      small one and the original bug returns for exactly those users.
+    - Verified: build 0/0, all three suites pass, and the app launches and stays up with empty
+      stderr, so the height arithmetic does not throw at runtime. **The 1366x768 appearance still
+      needs a human look** — the arithmetic says ~258px of scroll on a 768px display, but only a
+      real screen confirms the scrollbar behaves.
+
+**Found visually, not by the health check — the "Copy log" button was invisible.** A screenshot of
+the log card during the item 15 click-through showed only two buttons where there are three.
+Arithmetic confirmed why:
+
+| Button | x range (old) | |
+| --- | --- | --- |
+| Open output folder | 546–716 | added first, so painted **on top** |
+| Copy log | 624–714 | **entirely inside** the row above — unreachable |
+| Clear | 724–794 | |
+
+`_openOutput` was positioned as `ContentWidth - 18 - 170 - 8 - 70`, arithmetic that never
+accounted for the Copy log button: the `- 8 - 70` is missing `- 90 - 10`. It was added in
+**v1.3.5** ("A Copy log button beside Clear") and the other button was never shifted left.
+Because `_openOutput` is added to the card first it wins the z-order, so Copy log was not merely
+overlapped but painted over. **Pre-existing and unrelated to item 15** — confirmed by
+`git diff` showing no changed button coordinates.
+
+Fixed by laying the row out right-to-left from the card's inner edge, deriving all three
+positions from named width/gap constants instead of three independent expressions, so adding a
+fourth button can no longer silently collide. Verified: 446–616 / 624–714 / 724–794, gaps
+exactly 8 and 10, right edge at 794.
+16. ~~**Settings schema version and migration.**~~ **Done** (see Tranche 1). `AppSettings.ThemeMode`
+    was a live legacy field still read by the migration path; an explicit `SchemaVersion` now
+    exists and the dead property is gone. This was the prerequisite that makes a v1.4 settings
+    break safe.
+17. **Deferred to v1.4.2.** Save log to file / open logs folder. Copy-to-clipboard exists; saving a
+    dated log next to the converted output is what people actually attach to a bug report. Deferred
+    with item 8, which consumes it. More work than it looks: the log is written from the UI thread
+    while conversion runs on a worker, so the file writer needs its own locking and a decision about
+    truncation and rollover before it is trustworthy.
+    `ToggleSwitch`), plus a deliberate tab order in Settings. `ThemeSwatch` already has one.
+    Deferred because these are hand-painted controls: `FlatButton` and `ToggleSwitch` draw
+    themselves in `OnPaint` and do not derive from a themed WinForms base, so they expose no
+    accessibility surface at all. Wiring that up means giving each an accessible name, role and
+    state — which can only really be confirmed with a screen reader running, and this environment
+    has none. Shipping it unverified would be worse than deferring it.
+    `ToggleSwitch`), plus a deliberate tab order in Settings. `ThemeSwatch` already has one.
+    Deferred because these are hand-painted controls: `FlatButton` and `ToggleSwitch` draw
+    themselves in `OnPaint` and do not derive from a themed WinForms base, so they expose no
+    accessibility surface at all. Wiring that up means giving each an accessible name, role and
+    state — which can only really be confirmed with a screen reader running, and this environment
+    has none. Shipping it unverified would be worse than deferring it.
+18. ~~**Docs pass.**~~ **Done.** The README was four releases out of date and actively wrong:
+    titled `v1.3.2`, describing `Program.cs` as the "complete WinForms interface" (32 lines since
+    v1.3.7), and stating **"This repository is private"** when it has been public since v1.3.7.
+    Rewritten around the current feature set: what the converter does, the two theme tiers, the
+    three test suites with their build commands, a per-file project layout, and the release
+    mechanics the workflow actually enforces. The stale `Reference mod`, `Limitations` and
+    duplicated patch-mode sections were merged rather than left alongside their replacements.
+    Verified: zero remaining references to `v1.3.2`, "repository is private", "complete WinForms
+    interface" or the removed `Unreleased` changelog convention.
 
 ### Accessibility and polish (added, optional if scope gets tight)
-19. Accessible names/roles for the custom controls (`FlatButton`, `ToggleSwitch`),
-    plus a deliberate tab order in Settings. `ThemeSwatch` already has one.
-20. DPI-correct custom painting — the hand-drawn controls use raw pixel metrics, so
-    they can look soft at 150%.
-21. "Skip this version" for update prompts, and a first-run "what's new" panel.
+19. **Deferred to v1.4.2.** Accessible names/roles for the custom controls (`FlatButton`,
+    `ToggleSwitch`), plus a deliberate tab order in Settings. `ThemeSwatch` already has one.
+    Deferred because these are hand-painted controls: both draw themselves in `OnPaint` and do not
+    derive from a themed WinForms base, so they expose no accessibility surface at all. Wiring
+    that up means giving each an accessible name, role and state — which can only really be
+    confirmed with a screen reader running, and this environment has none. Shipping it unverified
+    would be worse than deferring it.
+20. ~~**DPI-correct custom painting**~~ **Moved to v1.4**, folded into the theme rewrite
+    (v1.4 item 5). It belongs with the `OnPaint` changes rather than as standalone polish.
+21. ~~"Skip this version" for update prompts, and a first-run "what's new" panel.~~ **Done
+    (the "what's new" half).** The app auto-updates silently, so a user had no way to find out
+    what changed. The startup window — previously the GitHub sign-in — is now the launch page:
+    a four-step quick start on a first run, and on later runs the release notes for everything
+    newer than the version last launched. `ReleaseNotes.cs` parses the embedded `CHANGELOG.md`
+    and is dependency-free so it is covered headlessly by SettingsMigrationVerify (now 57
+    checks). Suppressible via Settings → Advanced → "Show the launch page at startup".
+    The "skip this version" half for *update prompts* is still open, see v1.4.
 
-### Deliberately NOT in v1.3.9 — v2.0 territory
-- Real membership verification backend and the Ko-fi flow (items 3 and the Ko-fi tier).
-  These change product behaviour, not just UI, and deserve their own release.
-- Any settings-file format break. 1.3.9 only *adds* a schema version so v2.0 can.
-- The reverse camera on converted cars (item 12). It needs an authored dashboard `.sii`
-  and probably interior geometry work, which is a feature, not a fix.
+### Deliberately NOT in v1.3.9 — see v1.4 below
+
+---
+
+## v1.4
+
+The release the old roadmap called **v2.0**. Renamed because the version number was the least
+interesting thing about it: the settings-file format break is a **minor** bump, and the work is
+a rewrite of two subsystems rather than a new product. Everything here changes behaviour or
+persisted data, not just UI.
+
+Carried over, then additions.
+
+### Deferred from v1.3.9
+
+Items deferred **out of v1.3.9**, recorded so none is silently lost. Items 1–4 predate the
+in-game testing; items 5–7 came out of it.
+
+1. ~~**Real membership verification backend and the Ko-fi flow.**~~ **Cancelled — deleted in
+   v1.3.9.** Both the Ko-fi tier and then the GitHub sign-in were removed, so there is no gated
+   content left to verify and no backend to build. See item 3 above for why the API options were
+   ruled out. Reinstating any gate later means starting from nothing.
+2. **The settings-file format break.** Now unblocked: v1.3.9 added the schema version and a
+   migration path, so the settings schema can move from version 1 to version 2 deliberately
+   rather than by reinterpretation. This is the reason the version landed first. (Schema version
+   2 is unrelated to the app version — this release is still v1.4.)
+3. **The reverse camera on converted cars** (item 12). It needs an authored dashboard `.sii` and
+   probably interior geometry work, which is a feature, not a fix.
+4. **Launch page polish, deferred from v1.3.9.** The maintainer's first look at the finished page
+   produced three requests, two of which shipped in v1.3.9 (content-sized layout so the quick start
+   does not scroll, and Skip as the only way out). The third is deferred here:
+   - **A "Get started" primary action.** The v1.3.9 page has a single Skip button. It was intended
+     as a neutral, non-blocking greeting, so there is no affirmative "take me to the converter"
+     path. Worth designing properly rather than bolting on: the question is whether the launch
+     page should *navigate* to the converter or simply close into it, and whether a first-run user
+     who closes the window without converting should see it again next launch.
+   - Consider whether the launch page should still appear on *every* launch or only when the
+     version actually changed. Today it shows whenever the last launched version differs from the
+     current one, which means a user who reverts to an older build sees it too.
+
+**Added during v1.3.9, from what in-game testing exposed:**
+
+5. **Warn when one mod is converted twice under two brand tokens.** The two dealer-branding
+   options are both on by default and are *not* independent: converting one mod twice under two
+   different brand tokens writes two `brand_logo` files that override two different base-game
+   brands. Almost never intended, and the tool currently says nothing. Needs a way to notice that
+   the same input has already been converted once.
+6. **End-to-end same-brand coverage.** The checks exercise the namespace builder directly, but no
+   end-to-end conversion of two same-brand mods has been compared archive to archive for shared
+   unit names. Worth automating: convert both real Cadillacs and assert the two archives declare no
+   common `_nameless` unit. This is the check that would have caught the 12-character unit-name
+   violation as a hard failure rather than a theory, since it sweeps the real output.
+7. **A sweep asserting every unit name in a converted archive is legal.**
+   `NamespaceAnonymousUnits` now throws on an over-long namespace, so that specific path is
+   guarded, but nothing checks each component of *every* unit name in the output against the
+   12-character limit. That would catch any future source of illegal names, including ones that
+   never pass through the namespacing code.
+
+8. **Normalise the dealer's badge geometry.** v1.3.9 makes the background transparent but leaves
+   the artwork at its original dimensions, and the game draws the badge into a fixed slot. Two
+   live examples: BMW's 256x64 roundel looks **stretched** next to the square-ish stock badges,
+   and Volvo's 128x64 badge looks **small**. Fixing this is not a matter of rescaling the
+   texture — the aspect ratio of the slot, and whether the game letterboxes or crops, has to be
+   read out of the base game's own `ford.dds`/`dodge.dds`/`ram.dds` first. Measure, then pad or
+   resample to the reference geometry.
+9. **Greyscale converted badges to match the stock treatment.** The base game's badges read as
+   monochrome in the dealership; converted badges keep their brand colours (BMW blue-and-white,
+   Volvo's blue), so they read as different objects. This is a separate change from item 8 and
+   from the transparency work, and it **breaks the byte-for-byte colour guarantee** that the
+   alpha pass is built on — a deliberate trade, because that guarantee exists to protect the
+   artwork from *unintended* damage. It therefore belongs in its own toggle, defaulted on, with
+   a note that it alters colour; a mod author's brand colours are legitimate and some users will
+   want to keep them.
+
+   **Why neither is in v1.3.9.** Both were seen in game after the black box was fixed and both
+   are cosmetic, while the same release was carrying two correctness fixes that broke saves. The
+   transparency pass is deliberately lossless and provably so (colour blocks copied verbatim,
+   only alpha generated); item 9 would undo exactly that property, so shipping it silently
+   alongside would have weakened the guarantee that makes the feature trustworthy. Deferring
+   keeps the two concerns separable.
+
+### Additions
+
+4. **XML-driven settings pages** (moved from v1.3.9 item 11). The settings tabs are already
+   genuinely data-shaped via the `AddOption` helper; the goal is that adding a setting becomes a
+   small schema edit instead of ~40 lines of C#. This pays for itself by making all later
+   settings work far cheaper, which is why it lands *before* the polish items that add settings.
+   - Scope note: the schema has to be **validated**, not merely parsed. A malformed schema must
+     fall back to defaults rather than half-applying, and it needs its own test coverage —
+     `SettingsMigrationVerify` already exists to host that.
+   - The schema version from item 16 is what lets this ship: a schema change is just another
+     migration step rather than a silent reinterpretation of user data.
+5. **Theme rewrite — palette, accent and remap layer.** Scoped to the theme engine only.
+   Theme gating is explicitly **not** part of this — it no longer exists.
+   - `Theme.Palettes` is 12 palettes written as positional `Color.FromArgb` literals
+     (`Theme.cs:26-42`). Every colour is an unnamed 8th argument, so the palette record has no
+     self-describing fields and no place to hang semantics. Promoting it to named slots is the
+     enabling change.
+   - **Status colours sit outside every palette.** `Success`, `Warning`, `Error` and `Info` are
+     global constants (`Theme.cs:150-153`), so a palette cannot restyle them. Two light palettes
+     (`Daylight`, `Sandstone`) therefore carry the same dark-palette status colours. Per the
+     retracted item 4, `Info` blue is a *deliberate* semantic choice rather than a bug — so this
+     is about giving status colours a home per palette, not about recolouring them.
+   - **`RemapColor` matches by exact equality** (`Theme.cs:168-180`). A theme change walks the
+     control tree and swaps a colour only if it is bit-identical to a known palette colour. Any
+     derived, blended or alpha-composited colour silently fails to remap, which is a latent
+     source of half-themed controls. Matching on palette slot rather than value is the fix.
+   - **DPI-correct painting** (was v1.3.9 item 20). The hand-drawn controls use raw pixel
+     metrics, so they look soft at 150%. Worth doing in the same release because the rewrite is
+     already touching every `OnPaint`.
+
+### Ko-fi tier removed, then GitHub sign-in removed — the tool is free
+
+The maintainer decided against the Ko-fi supporter tier and asked for it to go, preferring to
+keep the tool **100% free**. Removed rather than commented out, because the health check treats
+commented-out code and unused members as findings in their own right.
+
+The six themes reserved for it were **kept and promoted** to the GitHub tier rather than
+deleted, so no work was lost: Midnight, Evergreen, Lagoon, Sandstone, Aurora and Vapor joined the
+GitHub tier. That was an intermediate state only. The maintainer then went further and removed
+the GitHub sign-in too, so **all 12 themes are unlocked and there is no account at all**.
+
+| | Original | After Ko-fi | Now |
+| --- | --- | --- | --- |
+| Tiers | Free, GitHub, KoFi | Free, GitHub | **none** |
+| Palettes | 3 / 3 / 6 | 3 free / 9 GitHub | **12 free** |
+| Unlocks | two paid routes advertised | one | **no gate** |
+
+**Round 1 — Ko-fi.** Removed `ThemeAccess.KoFi`, `Theme.KoFiPink`, `AuthSession.HasKoFiAccess`,
+the inert "Sign in with Ko-fi" button on the sign-in form, the disabled one in Settings, and the
+"Ko-fi themes" section in Settings. Verified 0 Ko-fi references remained in any source file.
+
+**Round 2 — GitHub sign-in.** Removed the last tier entirely rather than build a verification
+backend for content that is free. Deleted `AuthSession.cs`, `GitHubSignIn.cs` and `SignInForm.cs`;
+dropped the `ThemeAccess` enum, `IsLocked`/`IsUnlocked`/`LockColor`/`SupporterGold`, the padlock
+painting in `ThemeSwatch`, the sign-in/out buttons in Settings → Accounts, and the
+`ApplyAccountChange`/`PromptSignIn` local functions.
+
+Confirmed before deleting: `GitHubReleaseClient` uses only the `gh` CLI and never referenced
+`AuthSession`, so the updater and remote changelog are unaffected by removing the app's own
+OAuth flow. The Accounts tab now states plainly that no account is needed.
+
+The startup window that existed only for sign-in was repurposed as the launch page (item 21)
+rather than deleted, so the slot is not wasted.
+
+### Log popup window — **built, then removed**
+
+A separate `LogWindow` opening when a conversion finishes was implemented at the maintainer's
+request, to give the finished log somewhere to live that is independent of the main window's
+height. It worked, but the maintainer did not like how it looked and chose removal over a
+redesign. **Reverted. No popup ships.** `LogWindow.cs`, the `OpenLogWindow` helper and the
+`_logWindow` field are all gone; the log card stays on the main window as before.
+
+Worth keeping from the exercise: the arithmetic showed that removing the log card from the main
+window would leave content at `792 + 24 = 816px`, still above the ~728px working area of a
+768px display. So a popup would have improved readability on a short screen without removing the
+need for scrolling there. **Scrolling remains the small-screen answer.**
+
+**Regression found and fixed during that work, and kept.** `DefaultWindowHeight` was still 900,
+but content had become `792 + 170 (MinimumLogCardHeight) + 24 = 986px`, so a scrollbar appeared
+on *normal* desktops where there previously was none. The `MinimumLogCardHeight` floor had been
+chosen to protect short screens without checking it against the default height. Raised to
+**1016** (`792 + 24 + 200`), leaving a usable log with no scrollbar wherever the screen allows.
+Found by arithmetic prompted by the maintainer's screenshot, not by the health check.
+
+**Manually verified by the maintainer:** no scrollbar at normal window size, scrollbar appears
+when the window is dragged shorter, and the conversion itself runs normally.
+
+1. Item 4 (XML-driven settings) first — it makes every later settings change cheaper.
+2. Item 5 (theme rewrite) second — it is self-contained and needs no settings change to land.
+3. Item 2 (settings format break) third, now that the schema exists to migrate.
+4. ~~Item 1 (membership verification)~~ — **cancelled**, the gated content no longer exists.
+
+---
+
+## v1.4.1
+
+**Originally scoped as a patch release — no longer is.** This section was written as "defects
+found after v1.4 ships, nothing structural". The save editor (item 6) changes that: it is a new
+subsystem, in a new file format, on a new UI surface. Calling a release a *patch* while adding a
+whole feature is exactly the kind of label drift that makes release notes untrustworthy, so the
+framing is corrected here rather than quietly ignored.
+
+Two honest options, and the choice is the maintainer's:
+
+- **Call it a feature release (v1.5).** Semantically correct, but it sits awkwardly next to a
+  v1.4 that has not shipped yet.
+- **Keep the number v1.4.1** and state plainly in the changelog that it is a feature release. Also
+  acceptable, but the patch number should not be used to disguise the scope.
+
+What has not changed: **no settings schema break.** Schema versioning landed in v1.3.9 precisely so
+that a release adding features does not silently reinterpret user data. If the save editor needs to
+persist anything (last used save path, recent folders), that is a *new* schema version migrated
+deliberately — not a free-for-all.
+
+### Scope boundaries
+
+1. **The patcher stays ATS-only.** Converting a truck mod into a Road Trip car mod depends on ATS
+   car-mode definitions that have no ETS2 equivalent. This is not a limitation to be fixed later;
+   it is what the tool is.
+2. **The save editor supports both ETS2 and ATS,** because the save format is comparable across the
+   two games and this is where shared value actually is.
+3. **No new dependencies without explicit approval.** Same rule as the SharpCompress decision.
+4. **The save editor must never corrupt a save.** Any write goes through a verified
+   read → validate → write round trip, and the user's original file is backed up before it is
+   overwritten. See the safety rules below.
+
+### Open items
+
+6. **Save editor — both ETS2 and ATS.** Turns this from a single-purpose mod tool into a general
+   ATS/ETS2 toolkit. Layout decision from the maintainer: a tab bar below the title bar and above
+   the mod input, with **Patcher** (ATS only) and **Save editor** (ETS2 + ATS) as tabs. This is
+   preferred over a separate window so both tools share one window, one theme and one settings
+   store.
+
+   **Scope confirmed by the maintainer — three groups, plus both interaction styles:**
+   - **Money and XP**
+   - **Unlocking cities and trucks**
+   - **Skill points**
+
+   Both are wanted, not either/or: **presets** ("1M and everything unlocked") *and* precise
+   per-field entry. Presets come second because they are the harder half — a preset has to write a
+   complete, self-consistent set of values rather than changing one field in place — but the
+   maintainer wants both, so per-field entry is not treated as a fallback.
+
+   Job and freight state was considered and **deliberately left out**: it is the most intricate
+   part of a save and the easiest to corrupt, and it is not something the maintainer needs. Dropping
+   it removes the single riskiest part of the editor, which is worth more than the feature.
+
+   The three remaining groups still ship in stages rather than all at once. The ordering rule:
+   read-only inspection first (load a save, show its values, change nothing), then single-field
+   edits (money), then the bulk operations (unlock cities/trucks, skill points), and presets last
+   because they depend on all three groups working.
+
+   **Needed from the maintainer to start:** one save from **each** game (ETS2 and ATS), ideally an
+   early and a late profile to see how the format differs. Because a save cannot be attached in
+   chat, the agreed workaround is to run `scripts/inspect-save.ps1` on each and paste its
+   **structure summary** back. That prints the key layout with values elided, which is what the
+   parser needs to be written against and avoids putting a real profile's data into a conversation.
+
+7. **Save-repair / diagnosis view.** Follow-on from item 6, and motivated directly by the
+   `invalid_vehicle` experience: a read-only pass that lists unit references in a save which no
+   longer resolve to a definition in any mounted mod, and names the mod or patch that used to
+   satisfy them. It would have turned "the game says `invalid_vehicle` and I cannot tell why" into
+   "this save references `vehicle.volvo_cars.vols90`, which no enabled mod defines". Cheaper than
+   the full editor and useful on its own, so it is worth considering shipping **before** item 6 —
+   it needs enough of the save parser to exist, but not the write path or the UI surface.
+8. **Cross-patch collision report.** Two enabled patches for the same vehicle can define the same
+   units, and the car then appears twice or behaves oddly. The conversion report already lists every
+   written definition path so a user can grep manually; reading the sibling `.scs` files in the
+   mod folder and reporting the overlap directly turns that manual step into a check. Cheap, and it
+   covers a failure the converter structurally cannot detect on its own.
+
+The maintainer asked for a companion mod that would detect whether the save is in truck mode or
+car mode, hide all truck content when in car mode (keeping only the mode switch), and present
+converted cars under the matching truck brand's dealer.
+
+**Conclusion: the mode-detection half cannot be built.** Researched against the SCS modding wiki:
+
+- Mods are mounted at game start from the profile's mod list plus **DLC ownership**
+  (`dlc_dependencies`, and the `base` / `dlc_`-prefixed mount rule from 1.48). That is the complete
+  set of conditions the engine evaluates.
+- **Nothing is gated on career/mode state.** There is no directive, attribute or hook that reads
+  the save's mode or reacts to the in-game Mode Switch.
+- The Mode Switch changes career *inside a running session*, long after definitions are mounted.
+  By the time the player switches, the mod's definitions are already loaded.
+
+**The truck-hiding half is also redundant:** ATS already shows the car dealership, not the truck
+dealership, when the player is in car mode. Truck definitions still load, but they are not shown or
+buyable. A mod cannot change that, and does not need to.
+
+**What survives is the valuable half, and it belongs in the converter rather than a mod.**
+`ModConverter.TranslateDealerDefinitions` copies the `truck_dealer` `.sii` files into
+`car_dealer/<dealer-id>/` and rewrites their paths — but it **never writes a `brand` attribute**.
+
+### Duplication bug — root cause found: colliding global `_nameless` units
+
+The maintainer described the symptom precisely: **the Volvo S90 appears twice in the car
+dealership, and one copy sits in another patched car's dealer, replacing that car.** That ruled
+out the earlier "two patches for one vehicle" theory.
+
+Scanning every Road Trip patch in the mod folder for `_nameless.*` unit names found the real
+cause. In SCS a `_nameless.` name is **global**. Two different converted mods shipped *identical*
+global unit names:
+
+    Cadillac CT5-V 2022  ui/dashboard/ct5.sii
+                       _nameless._.speed, _nameless._.gear, _nameless._.sharedisplay, ...
+    Cadillac Escalade 2021  ui/dashboard/escalade.sii
+                       _nameless._.speed, _nameless._.gear, _nameless._.sharedisplay, ...
+
+    Cadillac CT5-V 2022  def/camera/units/interior_ct5.sii
+                       _nameless.interior.peterbilt.389.ar.*
+    Cadillac Escalade 2021  def/camera/units/interior_escalade.21.sii
+                       _nameless.interior.peterbilt.389.ar.*
+
+The second mod mounted over the first, so one car's definitions replaced the other's. The names
+come from the *source* mods (a Renault Megane and a Peterbilt 389), and `_nameless` appeared
+**nowhere in `ModConverter.cs`** — the patcher copied them through verbatim.
+
+**Fix shipped:** each conversion now namespaces its global anonymous units
+(`_nameless.X` → `_nameless.<dealer-id>.X`), applied in one consistent pass so references between
+the mod's own files still resolve. Verified end-to-end through a real CLI conversion:
+
+    accessories[]: _nameless.volvo._.speed
+    vehicle_accessory: _nameless.volvo._.speed {
+
+New option **"Avoid clashes with other mods"** in the Options card, on by default. The report
+lists every renamed unit name so the change is auditable.
+
+### Cars still duplicating after the brand change — the namespace was derived from the dealer ID
+
+Reported after the dealer/logo work: the S90 still duplicated over other patched mods. Real, and
+**caused by the default added in this same release**, not a leftover.
+
+`BuildAnonymousNamespace` derived the anonymous-unit namespace from the **dealer ID**, on the
+assumption that one dealer equals one vehicle. Adding "keep the mod's own brand" as the default
+broke that assumption, because a brand is not a vehicle. Measured across the real download set:
+
+| Mod | `truck_dealer` brands |
+|---|---|
+| Cadillac CT5-V 2022 | `cadillac` |
+| Cadillac Escalade 2021 | `cadillac` |
+| Ford F-150 Raptor 2017 | `ford` |
+| Ford_F250 | `ford` |
+| Ford Fusion 2010 | `volvo` |
+| FordTourneoCourier | `daf, iveco, kenworth, man, mercedes, peterbilt, renault, volvo` (8) |
+
+Two Cadillacs share `cadillac`, two Fords share `ford`, and the Courier declares eight brands at
+once. With the dealer ID now taken from the brand, both Cadillacs resolved to dealer `cadillac`
+and therefore to the **same namespace**, so their `_nameless` units collided again — the exact
+bug the namespacing was added to fix, reintroduced by the default that made the ID brand-derived.
+A user typing the same dealer ID twice could cause the same collision by hand.
+
+**Fix: the namespace comes from the input file name, not the dealer ID.** The file name is the
+only input guaranteed distinct per conversion.
+
+One subtlety cost a test failure and is worth keeping in mind: `StripVersionSuffix` runs *after*
+`SanitizeId`, which has already collapsed punctuation to underscores, so by that point
+`V2.3 1.60` is `V2_3_1_60`. The first version-stripping pattern matched only on dots, silently
+matched nothing, and stripped nothing — and the test caught it, which is the argument for having
+the test.
+
+The trailing version *is* stripped, so one vehicle keeps one namespace across game-version
+updates (`... 1.60.scs` and `... 1.61.scs` must not fight over unit names). A non-version
+qualifier such as `Beta` is deliberately **kept**, so a beta and a release of the same car get
+different namespaces: they are only ever installed together by mistake, and distinct names are
+what stop one silently replacing the other.
+
+Covered by checks for same-brand mods, same-dealer-ID-twice, version-strip stability, and the
+fallback chain.
+
+### Missing dealership logo — brand token and logo file name are one binding
+
+Fixing the wrong dealership (`vehicle.<dealer>.<model>`) left a second, quieter problem: the
+converted Volvo appeared in the right dealer **with no badge**.
+
+The logo is resolved by file name — `material/ui/brand_logo/<dealer>.mat`. Renaming the dealer
+from `volvo_cars` to `volvo` therefore leaves the game looking for a `volvo.mat` that no mod
+ships. The base game does not have a `volvo` brand, so nothing was found and the dealer rendered
+badge-less. The earlier diagnosis in this file was right about the unit name and wrong about the
+dealer being the whole story: the dealer ID is bound to *two* names, not one.
+
+Both halves are now handled, as two independent options:
+
+| Option | Effect | Logo work needed |
+|---|---|---|
+| **Keep the mod's own brand** (default) | Dealer stays `volvo_cars` | None — the game finds the existing logo by name |
+| **Rename the dealer** | Dealer becomes the typed ID | The mod's `.mat` is copied to the new name |
+
+The brand is read from `def/vehicle/truck_dealer/<brand>`, the same place dealer identity comes
+from. When a mod defines more than one truck brand the one that also ships a matching logo wins,
+falling back to the first by name so the choice stays deterministic.
+
+**The copy is byte-for-byte, and that is the whole trick.** A `.mat` names its texture by bare
+file name (`texture : "volvo_cars.tobj"`) and the game resolves that next to the `.mat`, so a copy
+under a new name keeps pointing at the texture the mod already ships. The obvious alternative —
+renaming the `.tobj` too — would mean patching a compiled binary with a length-prefixed string
+table that is not a documented format, for a cosmetic file. Not a risk worth taking.
+
+**`BuildPatch` silently dropped it.** Patch mode copies `def/` and `vehicle/` but nothing under
+`material/`, so the logo copy was being written and then thrown away — the fix would have worked
+in full-conversion mode and done nothing in the *recommended* mode. `CopyBrandLogoTree` now copies
+just that one folder, deliberately not the mod's whole material tree, which would drag every
+texture in the mod into an otherwise tiny patch.
+
+Verified against the real DLC in both modes (`tar -tf` on the output):
+
+    keep:   material/ui/brand_logo/volvo_cars.{dds,mat,tobj}
+            def/vehicle/car_dealer/volvo_cars/s90_2020.sii
+    rename: material/ui/brand_logo/sweden.mat          <- added
+            material/ui/brand_logo/volvo_cars.{dds,mat,tobj}
+            def/vehicle/car_dealer/sweden/s90_2020.sii
+
+The copied `sweden.mat` is identical to `volvo_cars.mat` and still references `volvo_cars.tobj`,
+which ships in the same archive.
+
+**Open, and worth knowing before converting the same mod twice:** both options are on by default,
+but they are *not* independent. Converting one mod under two different brand tokens writes two
+`brand_logo` files that override two different base-game brands. That is almost never what anyone
+wants, and it is the case a future version should detect and warn about.
+
+**Correction — a false lead, recorded because it nearly sent this the wrong way.** While
+diagnosing "no logo shows", the Volvo S90 mod appeared to ship `volvo_cars.mat` (75 B),
+`.tobj` (86 B) and `.dds` (5608 B) as *entirely zero bytes* — read with `tar`. That would have
+been a clean root cause: the mod author reserved the logo and never filled it in.
+
+It is wrong. Read with this project's own extractor (`--extract`, i.e. `ScsArchive`), the same
+files are 75/75, 51/86 and 1777/5608 non-zero bytes. `tar` silently mis-decodes this archive's
+nonstandard ZIP metadata — the exact problem `ScsArchive` exists to work around, which was
+already documented in the README and had been forgotten the moment a generic ZIP tool was
+reached for. **Never read these archives with a generic ZIP tool; their contents cannot be
+trusted.** `Expand-Archive` was equally untrustworthy here (it produced an empty directory and
+only printed the progress line).
+
+`HasRealContent` was kept regardless: an empty placeholder `brand_logo` is a real failure mode,
+it is simply not this mod's problem. It now reports the condition instead of copying a dead file,
+and `CopyBrandLogoTree` skips empty files so a patch cannot put a blank badge over a working one.
+Its doc comment records both the guard's purpose and the `tar` misreading so this is not repeated.
+
+**The logo binding itself is still unconfirmed.** `material/ui/brand_logo/<dealer>.mat` is
+inferred from where these mods put their files, not read out of ATS. The user reports that a
+converted car shows **a small purple square** instead of a badge. Purple/pink is the engine's
+missing-texture indicator, so *something* is being asked for and not found.
+
+**SOLVED from the game's own log.** The user supplied a `game.log`, which names the missing file
+exactly:
+
+    [car shop] Found logo of brand: dodge
+    [car shop] Found logo of brand: ford
+    [car shop] Found logo of brand: ram
+    <ERROR> [car shop] No logo found for brand 'volvo_cars'!
+    <ERROR> [car shop] No logo found for brand 'bmw'!
+    <ERROR> [car shop] No logo found for mod brand 'volvo_cars'!
+    <ERROR> [resource_task] Can not open '/material/ui/car_brand_logo/volvo_cars.mat'
+    <ERROR> [fs] Failed to open file '/material/ui/car_brand_logo/volvo_cars.mat'
+
+**ATS has two separate logo folders, and the car shop does not read the truck one:**
+
+| | Folder | Read by |
+|---|---|---|
+| Truck dealer | `material/ui/brand_logo/<brand>.mat` | the truck dealership |
+| **Car shop** | `material/ui/car_brand_logo/<brand>.mat` | the car dealership |
+
+A truck-era mod ships its logo under `brand_logo/`, which is correct while it stays a truck and
+**useless the moment it is sold as a car**. Every part of this investigation was chasing the right
+files in the wrong folder.
+
+`EnsureCarBrandLogo` now writes the logo set into `car_brand_logo/` on **every** conversion —
+including the "keep the mod's own brand" default, which is precisely the case that was broken.
+Keeping the brand had been treated as sufficient because the file was already in the archive; it
+was, and it was in the folder the car shop never reads.
+
+**No logo needed downloading or recreating.** The artwork was always present and valid; it just
+needed filing under the right shop. Verified on the two real mods — each converted archive now
+carries both folders, and the car-shop copy is exactly the file the log was asking for:
+
+    material/ui/car_brand_logo: volvo_cars.dds, volvo_cars.mat, volvo_cars.tobj
+    material/ui/brand_logo:      volvo_cars.dds, volvo_cars.mat, volvo_cars.tobj
+    material/ui/car_brand_logo: bmw.dds, bmw.mat, bmw.tobj
+
+All three files travel together: the `.mat` resolves its `.tobj` by bare name beside itself, so the
+`.tobj` must come too. The truck-era copy is deliberately **kept**, because the `.tobj` holds an
+absolute path (`/material/ui/brand_logo/volvo_cars.dds`) straight back into it.
+
+`CopyBrandLogoTree` carries both folders into a patch for the same reason.
+
+**What the log also settled.** It confirms both cars were found and their brands read correctly —
+`[car shop] Selected brand 'volvo_cars'` and `'bmw'` — so the dealer-assignment work is sound. The
+purple square was purely the missing badge, and the log's own wording ("No logo found") is what a
+missing-texture placeholder looks like from the inside.
+
+**Note for anyone tempted by "just grab a logo from Google":** not needed, and it would have been
+wrong. The mod ships real Volvo and BMW artwork; substituting a downloaded image would have
+replaced a correct logo with an unofficial one, and added a licensing question to a tool that
+currently has none.
+
+### Correction: the `.tobj` embeds an ABSOLUTE path
+
+Dumping the bytes shows the compiled texture object ends with a length-prefixed string:
+
+    /material/ui/brand_logo/volvo_cars.dds
+
+So the chain is **two links with different rules**, not the single bare-name link this file
+previously claimed:
+
+- `.mat` → `.tobj` — bare file name, resolved beside the `.mat`
+- `.tobj` → `.dds` — **absolute path inside the binary**
+
+The copy strategy still works (the mod ships the original `.tobj`/`.dds` and the copied `.mat`
+points at them), and renaming the `.dds` really would require binary rewriting. But the stated
+reasoning was wrong and has been corrected in `ModConverter.CopyBrandLogoForDealer`.
+
+### Leading hypotheses, in order
+
+1. **Wrong folder.** The mods ship `material/ui/brand_logo/`. If ATS resolves the *car* dealership
+   badge from `material/brand_logo/` (no `ui/`), these logos never worked — original mod included.
+   **This is the cheapest thing to test and the least invasive to try**: write the logo into both
+   locations. An extra small file is harmless; a wrong guess costs nothing but a few bytes.
+2. **The badge is not driven by `brand_logo` at all** — it may come from a brand definition the
+   dealer references, or from the Road Trip DLC's own brand table.
+3. **Hypothesis 1 is right and the original mod's logo also never worked.** Nothing in this repo
+   can distinguish that; only loading the *unconverted* mod in game can. **This is the single most
+   valuable observation still missing** and it costs the user one minute: if the stock Volvo S90
+   shows a badge and the converted one does not, the converter is at fault; if neither does, the
+   mod's logo was already broken and no converter change will fix it.
+
+### What is needed to close this
+
+**Closed.** The `game.log` supplied by the user named the missing resource outright. The two items
+below are no longer needed for *this* problem:
+
+- ~~`game.log`~~ — supplied, and it identified the file and the folder immediately.
+- ~~`base.scs`~~ — the log answered the question the archive was going to be needed for.
+
+Still worth having for **other** open questions, chiefly the patch-mode `invalid_vehicle` merge
+semantics in the v1.3.9.1 notes, which genuinely needs the game's own definition files.
+
+**The badge rendering in game is still unverified**, and that is the actual open item.
+
+### Earlier theory, retracted
+
+- **"Two patches for one vehicle"** — the S63 does ship two enabled archives with identical unit
+  paths (`2021 Mercedes-Benz AMG S63_1.61x_roadtrip_patch` and `AMG S63_Def_roadtrip_patch`), but
+  that is a separate concern and is not the reported symptom.
+- **Missing `brand` attribute on `car_dealer`** — **wrong, and this was the wrong question.**
+  All 15 `car_dealer` files across every local Road Trip patch lack `brand`, *including* a file
+  derived from the base game (`car_dealer/ford/ford_f150_23.sii`). Branding genuinely is not
+  carried by a `brand` attribute. What the earlier note could not answer without the base game is
+  *where* the brand actually lives. Answered below.
+
+### Unit-type inconsistency, still open
+
+| Vehicle | Unit type |
+| --- | --- |
+| Volvo S90 | `vehicle : .s90_2020` |
+| Ford F-150 (base-derived) | `vehicle : .car` |
+| Mercedes S63 | `car : .tdealer.s63` |
+
+The S63 is the odd one out and disagrees with genuine base-game files. Unresolved.
+
+### Wrong-dealership bug — root cause found: the brand is the middle of the unit name
+
+The maintainer reported a follow-on symptom after the first fix: **the Volvo S90 was not in the
+Volvo dealer at all, but appeared in the BMW dealer of the BMW mod.** This was not a leftover of
+the duplication bug; it was a separate defect in how the patcher named the car.
+
+ATS is not installed on the development machine, but the maintainer's own Road Trip DLC
+(`Documents/American Truck Simulator/mod/dlc_rt_ford.scs`) is a HashFS archive of the real
+`dlc_rt_ford` content, and the repository's `ScsArchive` reader extracts it. That gave the
+answer the previous note said it needed:
+
+    def/vehicle/car/ford.f150_23/data.sii
+        accessory_truck_data : vehicle.ford.f150_23     <-- brand is the middle component
+    def/vehicle/car_dealer/ford/ford_f150_23.sii
+        vehicle : .car { accessories[]: .data ... }      <-- no `brand` attribute anywhere
+
+So the dealership a car belongs to is **not** a `brand` attribute. It is the middle namespace
+component of the car's own `accessory_truck_data` unit, and it must match the `car_dealer/<brand>/`
+folder. The definition folder mirrors the unit namespace, so the folder name is `<brand>.<model>`
+too.
+
+A truck-era mod has no brand component at all:
+
+    def/vehicle/truck/vols90/data.sii
+        accessory_truck_data : vehicle.vols90           <-- nothing for ATS to match
+
+The patcher copied that unit through verbatim, so the converted car had **no dealership of its
+own**, and the game listed it under whichever brand happened to claim the unmatched definition.
+That is precisely why the S90 turned up in the BMW dealer, and it explains the "Volvo missing
+from the Volvo dealer" half of the report too.
+
+**Fix shipped.** Each conversion now rewrites the unit to `vehicle.<dealer-id>.<model>`, renames
+the definition folder to match (the namespace mirrors the path, so the two cannot disagree),
+moves the asset folder with it, and repoints the dealer's `data_path` entries. Only the vehicles
+this conversion migrated are touched, so another mod's car folder in the same tree is left alone.
+
+Verified end-to-end against the real Volvo S90 archive:
+
+    def/vehicle/car/volvo.vols90/data.sii
+        accessory_truck_data : vehicle.volvo.vols90
+    def/vehicle/car_dealer/volvo/s90_2020.sii
+        data_path: "/def/vehicle/car/volvo.vols90/data.sii"
+
+which is structurally what the base game expects, while the definition folder keeps the mod's own
+name. `Validate` also now reports any car definition whose unit still lacks a brand component, so
+the class of bug surfaces instead of silently misplacing the car.
+
+### The crash that fix caused, and the correction
+
+The first implementation also renamed the definition folder, `def/vehicle/car/vols90` to
+`def/vehicle/car/volvo.vols90`, to match the unit namespace. **That crashed the game when a save
+was loaded.** The folder rename was correct as far as the unit went, but a mod addresses its own
+definitions *by path*, and the patcher only rewrote the paths inside `car_dealer`. Every other
+reference was left pointing at a folder that no longer existed. In the S90 that was, among others:
+
+    def/vehicle/car/vols90/interior/black.sii
+        defaults[]: "/def/vehicle/car/vols90/accessory/steering_w/default.sii"
+
+A definition whose `defaults[]`/`fallback[]` cannot be resolved is fatal to the load, so the game
+died before the dealership was ever reached.
+
+**Correction shipped:** only the *unit name* is rewritten now, never the folder, and the rewrite
+runs across every definition file in the mod in one consistent pass so the declaration and all
+references to it move together. Verified on the real S90 archive:
+
+    def/vehicle/car/vols90/data.sii
+        accessory_truck_data : vehicle.volvo.vols90     <-- brand present
+    def/vehicle/car_dealer/volvo/s90_2020.sii
+        data_path: "/def/vehicle/car/vols90/data.sii"   <-- folder still exists
+
+with **zero** `def/vehicle/car/...` references left dangling.
+
+**The general lesson, worth stating because it is easy to get wrong again:** renaming a
+definition folder is never safe on its own. Every reference to it has to be rewritten in the same
+pass, and the safest default is not to rename it at all. `ModConverterVerify` now walks the
+converted archive and fails if any `def/vehicle/car/<name>/` reference names a folder that is not
+present, so this class of breakage is caught automatically instead of by a game crash.
+
+Also observed: the two patches disagree on the unit type for the same concept — the newer S63
+writes `car :` while the older Volvo writes `vehicle :`. Worth checking which one the game expects.
+
+Next step before writing any fix: dump the base game's own `def/vehicle/car_dealer` to see the exact
+attributes a branded dealership needs. `scripts/inspect-save.ps1` accepts a directory for this, so
+the same paste-back route works:
+
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\inspect-save.ps1 -Raw `
+      -Path "<extracted base.scs>\def\vehicle\car_dealer"
+
+`-Raw` is needed here because these are game files, not a private profile, so the actual values are
+the whole point. The game is not installed on the development machine, so the maintainer must run
+this on the machine that has ATS.
+
+   **Why this needs care, stated up front rather than discovered later:**
+   - Save format is **game-version dependent**. ATS and ETS2 saves differ, and both change between
+     game updates. A parser that silently mis-reads a field is worse than one that refuses.
+   - Saves contain **irreplaceable progress** — hours of driving, money, unlocks. Corruption here
+     costs a user far more than any bug in the patcher.
+   - Therefore: **read and validate first, write only on explicit user action, back up before
+     overwrite**, and never round-trip a save through the editor unless the user asked for it.
+
+   **Scope confirmed by the maintainer — three groups:**
+   - **Money and XP**
+   - **Unlocking cities and trucks**
+   - **Skill points**
+
+   Job and freight state was considered and **deliberately left out**: it is the most intricate
+   part of a save and the easiest to corrupt, and it is not something the maintainer needs. Dropping
+   it removes the single riskiest part of the editor, which is worth more than the feature.
+
+   The three remaining groups still ship in stages rather than all at once. The ordering rule:
+   read-only inspection first (load a save, show its values, change nothing), then single-field
+   edits (money), then the bulk operations (unlock cities/trucks, skill points).
+
+   **Needed from the maintainer to start:** one `game_data.sii`-style save from **each** game (ETS2
+   and ATS), ideally from an early and a late profile to see how the format differs. Both are
+   needed before any parsing is written, because guessing the format is how this goes wrong.
+   Because a save cannot be attached in chat, the agreed workaround is to run
+   `scripts/inspect-save.ps1` on each file and paste its **structure summary** back. That prints the
+   key layout with values elided, which is what the parser needs to be written against and avoids
+   putting a real profile's data into a conversation.
+
+   **Still open even with the fields decided:** exactly *which* fields in each group are
+   editable, and whether the editor should offer presets ("give me 1M and everything unlocked") or
+   only precise per-field entry. Presets are far more useful but also far more dangerous, because
+   a preset has to write a complete, self-consistent set of values rather than changing one field
+   in place.
+
+7. **Tab bar plumbing.** Independent of the save editor and worth landing first, because it is small
+   and lets the patcher ship behind the new navigation before the editor exists:
+   - A themed tab strip below the title bar, above the mod input.
+   - Each tab owns its own layout and is shown/hidden rather than rebuilt, so switching is cheap and
+     cannot lose entered state (dealer ID, chosen options, typed paths).
+   - The tab bar participates in the existing window-height and small-screen clamping, so adding it
+     must not reintroduce the scrollbar problem fixed in v1.3.9. **This is now mechanical rather
+     than guesswork:** the vertical budget was extracted into `MainLayout.cs` in v1.3.9 and is
+     asserted headlessly. Adding a tab strip means raising `ExtraChromeAboveLog` in
+     `ConverterForm.Layout.cs` to the strip's height. `MainLayout.WindowHeightFor` and
+     `MinimumHeightFor` already do the arithmetic, and the suite already checks that a 56px strip
+     raises the window by exactly 56px and leaves the log at its preferred size. The one thing
+     still needing eyes: the height is now derived rather than a round number, so re-confirm by
+     hand that a normal desktop still opens with no scrollbar.
+   - The current window geometry is saved and restored; the tab strip must not shift that.
+
+8. **Deferred "Get started"** on the launch page — see v1.4 item 4.
+
+### Rules for this release
+
+1. **Tests green before tagging**: full solution build with warnings-as-errors and
+   `--no-incremental`, plus all three suites.
+2. **A new suite for the save format.** Save parsing is exactly the fiddly, silently-wrong work
+   `ModConverterVerify` exists for. It needs a fixture-driven suite with saved-file samples
+   committed as test data, and it must cover malformed and truncated saves.
+3. **A regression found by the health check or manual testing is always in scope**, regardless of
+   which release introduced it.
+4. **No settings schema change without deliberately bumping `SettingsSchema.CurrentVersion`** and
+   adding the migration step.
+
+---
+
+## v1.4.2 — deferred from v1.3.9
+
+**Scope set by the maintainer: the hardest and longest-to-program items still open in v1.3.9.**
+Items 6 and 7 landed afterwards, so **v1.3.9's code scope is now closed** — what remains for it is
+the verification list under `### Before v1.3.9 can ship` and the commit/tag. Everything below was
+deferred deliberately, not abandoned; each carries its reasoning inline at its item in the v1.3.9
+section.
+
+Ordered by how much work it actually is:
+
+1. **Item 5 — password-protected `.scs` support.** The single largest item in the roadmap. Three
+   separate pieces of work: a password-prompt UI, a new dependency (`SharpCompress` **≥ 0.48.0**,
+   since 0.37.2 carries a path-traversal advisory), and a new archive path, because
+   `System.IO.Compression` cannot read encrypted zips at all. It also cannot be built
+   incrementally — the dependency decision gates everything else — and working rule 3 requires
+   maintainer approval for a new dependency, which should not be rushed inside a bugfix release.
+   Scope stays as written: the user's own file with their own password, never SCS `<Encrypted/>`
+   payload decryption.
+2. **Items 17 and 8, together — save log to file, and the "report a problem" bundle.** They ship as
+   a pair because 8 consumes 17: a bundle button with no log file can only ever attach an empty
+   log. Item 17 is more work than it looks, since the log is written from the UI thread while
+   conversion runs on a worker — the file writer needs its own locking plus a decision on
+   truncation and rollover before it is trustworthy. Item 8 is cheap once 17 exists.
+3. **Item 9 — backup naming and restore UX.** Deferred on risk, not size. It is the only genuinely
+   **destructive** feature in the v1.3.9 list: restoring overwrites a user's mod. That needs an
+   explicit file list, a real confirmation step, and a decision about whether the `.bak` survives
+   the restore. Safety design, and it does not belong in an otherwise bug-fix-shaped release.
+4. **Item 19 — accessibility for the custom controls.** Deferred because it cannot be verified
+   here. `FlatButton` and `ToggleSwitch` are hand-painted and derive from no themed base, so they
+   expose no accessibility surface at all; each needs an accessible name, role and state added by
+   hand. Confirming any of that needs a screen reader running, and this environment has none.
+   Shipping it unverified would be worse than deferring it — an accessibility feature that is
+   quietly broken is worse than an absent one, because it looks done.
+
+### Order of work when v1.4.2 is picked up
+
+Items 1 and 2 are independent and can go in parallel. Item 4 wants a machine with assistive
+technology available, so it may need to be scheduled rather than started. Item 3 should not ship
+without its confirmation UX designed first.
+
+### What this leaves for v1.3.9
+
+No open code items at all. v1.3.9 ships as a bug-fix release carrying the dealer branding and logo
+work, the car-duplication fix, the `invalid_vehicle` unit-name fix, patch mode turned off by default,
+and items 6 and 7 — with only the five verification steps under `### Before v1.3.9 can ship` and the
+commit/tag outstanding.
 
 ---
 
@@ -623,3 +1625,350 @@ copy silently — use `-Game` for anything that shipped with the game.
   two trees cannot contaminate each other.
 - **A mod-folder `.scs` is not necessarily the one the game loads.** See the stale-archive
   note under v1.3.9 item 12; it produced several confidently wrong conclusions.
+- **Never inspect these archives with a generic ZIP tool.** `tar` and `Expand-Archive` both
+  mis-decode the nonstandard ZIP metadata and will show you an empty or zero-filled file that is
+  not empty. That produced a confidently wrong "the mod ships an empty logo" conclusion — see the
+  correction above. Use `--extract` / `ScsArchive` for anything that has to be *true*.
+- **The terminal is unreliable here.** Long foreground commands frequently report
+  `Command completion could not be observed` / exit code 1 with no output, and PowerShell
+  `try`/`catch` blocks swallow the result. Redirect to a file and read it back; do not treat
+  "could not be observed" as failure. Script execution policy also blocks `.ps1`, so inline the
+  command instead.
+- **SCS unit name components are capped at 12 characters.** This is not documented in our code
+  anywhere and it silently produced patches that converted cleanly and failed in game with
+  `invalid_vehicle`. Any generated unit name must be checked against the limit. Sources: the
+  modding wiki ("Unit names are divided into components which are 12-char tokens separated by
+  dot") and the SCS dashboard guide ("it must be in SCS name specification - 12 symbols
+  length"). Truncation to a limit is not a uniqueness strategy on its own — several real mods
+  share a common prefix — so it has to be truncate + hash.
+- **A save-load error is a different class of bug from a definition error.** `invalid_vehicle`
+  meant a unit the save referenced no longer resolved, not that a definition was malformed.
+  Nothing in the conversion report or the log would ever have shown it; the only signal was the
+  game refusing the save. Checks that assert *what the game will resolve* are worth more than
+  checks that assert the conversion ran.
+
+### v1.4.2 — "invalid_vehicle" on save load: our own 12-character violation
+
+Reported as a screenshot of the ATS `invalid_vehicle` error dialog after patching the Cadillac
+CT5-V, then reproduced with a newly patched S90 and BMW M5 — the same message every time, which
+immediately pointed at something the tool emits in *every* patch rather than something
+mod-specific.
+
+`invalid_vehicle` is a **save-load** failure: the save names a vehicle unit, the engine cannot
+resolve it, and it refuses to load. That is a very different failure from a malformed definition,
+and it is why the conversion looked completely clean. The v1.3.9 build reported success, wrote
+zero validation issues, and produced an archive that only broke once ATS touched it.
+
+Cause: the namespace change made in v1.3.9 (see the duplication entry above) took the
+anonymous-unit namespace from the mod file name, and inserted it into *every* `_nameless` unit in
+the patch. SCS unit names are dot-separated components of **at most 12 characters**. Real names
+are much longer:
+
+| Mod file name | v1.3.9 namespace | Length |
+|---|---|---|
+| `Ford_F250.scs` | `ford_f250` | 9 — legal |
+| `Volvo S90 2020 V2.3 1.60.scs` | `volvo_s90_2020` | 14 — **illegal** |
+| `Cadillac Escalade 2021 V2.3 1.61.scs` | `cadillac_escalade_2021` | 22 — **illegal** |
+| `Cadillac CT5-V Black Wing 2022 V2.2 1.60.scs` | `cadillac_ct5_v_black_wing_2022` | 30 — **illegal** |
+| `Ford F-150 Raptor 2017 V1.7.1 Beta.scs` | `ford_f_150_raptor_2017_v1_7_1_beta` | 34 — **illegal** |
+
+Confirmed in the shipped CT5-V patch by extracting it and collecting every `_nameless.<component>`
+in the result: one distinct value, `cadillac_ct5_v_black_wing_2022`, length 30.
+
+This is also why the earlier dealer-derived namespaces were all fine: `cadillac` (8),
+`volvo_cars` (10), `ford` (4) all happened to fit. Uniqueness and legality were in tension and
+the previous scheme only avoided the problem by being short — which is exactly the trade the
+brand default removed.
+
+**Fix:** `ShortenNamespace` caps at 12 as 8 readable characters + `_` + a 4-character FNV-1a hash
+of the *full* name. Truncation alone would collide — both Cadillacs start `cadillac` — so the
+hash is what preserves uniqueness, and it is computed pre-truncation. Names already within the
+limit are returned untouched, so `ford_f250` keeps its name and existing patches are unaffected.
+
+FNV-1a rather than `string.GetHashCode()`, because .NET randomises the latter per process: the
+namespace would change on every launch and silently break every patch already in a user's mod
+folder.
+
+Verified on the real CT5-V: the patch now emits `_nameless.cadilla_f0g5.*`, length 12. Covered by
+checks over the real download-set file names asserting legality, distinctness and stability.
+
+`NamespaceAnonymousUnits` now also throws if handed an over-long namespace, so this cannot
+regress silently even if a future change reintroduces a long name.
+
+**Lesson recorded above:** the v1.3.9 change fixed a real collision and introduced a worse bug,
+and every check we had passed. The gap was checking *what the engine can resolve*, not *what our
+own functions return*.
+
+### Researched: "why not patch the whole mod instead of just the definitions?"
+
+Suggested by the user as a possible v1.4.2 feature. **Not implemented, and the research says it
+would not have fixed `invalid_vehicle` at all** — recorded so it is not re-proposed.
+
+Full conversion already exists: it is the default, `--patch-only` is the opt-in "safe" mode, and
+the GUI toggle is "Definitions-only patch (recommended)". So this was not new work, it was a
+question of which mode should be the default.
+
+**Why it would not have fixed the reported bug.** `invalid_vehicle` came from an illegal unit name
+written into *every* `_nameless` unit. Full conversion runs the same rewrite pass over the same
+definition files — the difference is only what gets *packed* around them. The illegal name would
+be present either way. The user hit this on a patch build; switching modes would not have changed
+the outcome.
+
+**The trade-offs point the other way:**
+
+| | Patch (current default) | Full conversion |
+|---|---|---|
+| Original mod | Untouched, removable at any time | Replaced — the source `.scs` no longer matches |
+| Duplicate-unit risk | Patch and original both define the truck dealer; handled by emptying the originals | None — one archive |
+| Reverting | Delete one file | Re-download the mod |
+| Mod updates | Re-patch | Re-convert from the new version |
+
+Full conversion's one genuine advantage is removing the double-definition situation entirely. But
+that is already handled — the patch writes empty stubs over the original `truck_dealer` entries —
+and the cost is losing the ability to undo without re-downloading.
+
+**Recommendation: keep patch mode as the default.** If this is to change it should be an explicit,
+tested switch with the revert cost spelled out in the UI, not a silent flip.
+
+## v1.3.9 shipping checklist — closed, with three items carried forward
+
+v1.3.9 is **tagged and published**. Of the five items that stood between the tree and a release,
+three are closed and two are carried into v1.3.9.1 / v1.4.
+
+1. **Patch-mode position — CLOSED.** The maintainer chose option (c): v1.3.9 shipped with patch
+   mode **off by default** and labelled as having a known bug. The switch is off, it is renamed
+   "Definitions-only patch (known bug)", selecting it raises a warning before anything is written,
+   the README documents it, and five checks pin the default so it cannot quietly flip back. The
+   remaining in-game confirmation is folded into the v1.3.9.1 scope below.
+2. **Confirm the car-duplication fix in game — CARRIED FORWARD, now blocking.** Namespaces now
+   come from the input file name, so they provably differ per mod, but "provably different names"
+   is not "no duplication". Load a save with two same-brand cars (both Cadillacs, or the two
+   Fords) plus the S90 and check all three appear and drive. This can only be tested in **full
+   conversion** mode until the patch-mode crash is fixed.
+3. **Confirm the dealership logo binding from `base.scs` — ANSWERED IN GAME, and it moved.** The
+   original worry was that `material/ui/brand_logo/<brand>.mat` might be the wrong path or that
+   the bare-name `.tobj` reference might not resolve. In-game testing showed the opposite failure:
+   the truck-era logo resolved fine, but the **car shop** reads a different folder,
+   `material/ui/car_brand_logo/`, which a truck mod never ships. Both folders are now written on
+   every conversion, and both must be transparent because the `.tobj` holds an absolute path back
+   into `brand_logo/`. No further machinery is needed for the binding itself.
+4. **Verify the 1080p layout by eye — STILL OPEN.** The options card was repacked into pairs to
+   keep the default window at 1080px rather than 1150px. The arithmetic is asserted by
+   `SettingsMigrationVerify`, but nobody has actually looked at the two new switches side by
+   side at half width — a long `Description` may wrap badly in a pair.
+5. **Final repository review, commit and tag — CLOSED.** The whole v1.3.9 body of work is
+   committed and tagged: authentication removal, launch page, About tab, layout fixes, dealer
+   branding and badges, both namespace fixes, `MainLayout.cs`, `ReleaseNotes.cs`,
+   `SettingsSchema.cs`, `BrandLogoAlpha.cs`, both test projects, and a full README overhaul.
+
+## v1.3.9.1 — the patcher fix, after v1.3.9 is pushed
+
+**Scope decided by the maintainer: v1.3.9 ships first**, with patch mode off by default and
+labelled as buggy. v1.3.9.1 is then the proper fix. Its scope is the research note at the bottom of
+this file — in short:
+
+1. Stop writing an empty unit tree over the original's `truck_dealer` entry; redefine that unit
+   name with valid content instead.
+2. Carry the shared asset roots (`automat/`, `material/ui/accessory/`) that full conversion
+   currently drops, which is the missing-textures half.
+3. Verify SCS mount-order merge semantics in game — patch above the original *and* below it —
+   before trusting any redefinition approach.
+4. Re-enable patch mode as the default only once all of the above is confirmed in game.
+
+Deferred feature work is **not** duplicated here: it already has a home in the `## v1.4` and
+`## v1.4.1` sections above. A second list is how the version numbering got muddled in the first
+place.
+
+## Research: why patch mode crashes but full conversion does not
+
+The user ran three configurations in game. The results contradict where the fault was assumed to
+be, so both were re-measured from the real archives rather than reasoned about.
+
+| Configuration | Result |
+|---|---|
+| Full conversion, patch toggle **off** | Cars appear in their own dealers. **No textures.** |
+| Fresh patches for both cars | `invalid_vehicle` |
+| Full conversion **and** patches together | `invalid_vehicle` |
+
+### The diagnosis was backwards
+
+"Both cars load into their own dealer, but have no textures because the defs are not patched"
+implicates patch mode as the broken path. The measurements say the opposite:
+
+- **Full conversion is the mode that loses textures.** The patch ships `automat/` (100 files) and
+  `material/ui/accessory/` (72 files) that full conversion does not.
+- **Patch mode's dealer assignment is byte-identical to full conversion's.**
+  `car_dealer/volvo_cars/s90_2020.sii` is character-for-character the same in both archives.
+  Whatever makes the dealer correct is not the thing patch mode does differently.
+- The crash is **only** reproducible with a patch in the folder.
+
+So the two symptoms have **two independent causes**, and full conversion is not a working
+workaround — it silently trades a crash for an untextured car.
+
+### Why full conversion loses textures
+
+`car.pmd` references its textures with **no `vehicle/` prefix at all**:
+
+    /automat/ec/ec529005d7cfe966.mat
+    /automat/95/951db6daaf80278e.mat   ... (28 of them)
+
+and paint/metallic textures live in `material/ui/accessory/met_color3.dlc_metallics.*`. These are
+the mod's *shared* asset roots. `automat/` is a top-level archive directory alongside `def/`,
+`material/` and `vehicle/` — it is not under `vehicle/truck/`, so the "move truck assets to car"
+pass never touches it, and `BuildPatch`'s copy list (`def/` and `vehicle/truck` → `vehicle/car`)
+does not include it either.
+
+Both modes ship `vehicle/car/volvo_s80/` with an identical 140 files (44 `.dds`, 44 `.tobj`,
+20 `.pma`, 15 `.pmd`, 15 `.pmg`, 2 `.pmc`). The model is present in both; only the *root-level*
+support trees differ. **The model is not what is missing — the shared support roots are.**
+
+### Why patch mode crashes (`invalid_vehicle`)
+
+Patch mode writes a **13-byte empty stub** over the original's dealer entry:
+
+    def/vehicle/truck_dealer/volvo_cars/s90_2020.sii
+    SiiNunit
+    {
+    }
+
+That is an *empty unit tree* placed at the exact path where the original mod defines
+`vehicle : .s90_2020` with 18 accessories. Patch mode is designed to load **above** the untouched
+original, so this stub overrides the original's definition with nothing. The dealer entry the game
+resolves for that vehicle then has no accessories at all, and a save's stored vehicle reference
+cannot be satisfied — `invalid_vehicle` on load.
+
+This also explains why combining a converted mod with a patch still fails: the patch's stub is
+still mounted above both, still emptying the dealer entry. And it explains why the first
+`invalid_vehicle` only ever appeared once patches were introduced.
+
+### What the 12-character research got wrong
+
+Everything above is consistent with `AssignDealerBrand` being correct — the dealer files match and
+the car appears in the right dealer. The 12-character namespace bug was real and separately fixed,
+but it is **not** what causes `invalid_vehicle` in the current build, because the current build
+already emits legal 12-character namespaces and still crashes. Two distinct bugs were conflated,
+and the second one was hidden behind the first.
+
+### Fix direction for v1.3.9.1
+
+1. **Do not blank the original dealer entry.** Instead of overwriting
+   `truck_dealer/<brand>/*.sii` with an empty unit tree, redefine that *same unit name* with valid
+   content pointing at the converted car paths. An empty file is a deletion, and SCS merges by
+   unit definition, not by file deletion — the current stub deletes a definition the save needs.
+2. **Verify merge semantics before coding.** Whether a redefinition wins depends on mount order and
+   on both mods being mounted. Needs an in-game test with the patch above the original *and* below
+   it.
+3. **Carry `automat/` and `material/ui/accessory/` in patch mode**, and decide deliberately whether
+   full conversion should carry them too — right now the two modes disagree about which shared
+   roots belong to the mod, and one of them is already wrong.
+4. **Re-test all four configurations** after the change: patch only; full only; both; and patch
+   above vs below the original.
+
+### Process lesson
+
+"The defs are not being patched, so the def patcher is at fault" was reasonable and wrong, and
+wrong in the direction that made full conversion look like the fix. Two symptoms that appear
+together were assumed to have one cause; they have two. **Measure the configurations against each
+other before believing a symptom's own explanation** — both archives were available locally the
+whole time.
+
+## Research: the black box around a converted dealer's badge
+
+Reported after the purple-square fix landed: Volvo and BMW badges render inside a black rectangle
+while the base game's Ford, Dodge and RAM badges do not. The badge *resolves* correctly — the log
+shows `[car shop] Found logo of brand: volvo_cars` — so this is a separate, purely cosmetic defect
+in the texture file.
+
+### The cause, measured from the files
+
+| Logo | Format | Black pixels | Result |
+|---|---|---|---|
+| Volvo `volvo_cars.dds` (128x64) | **DXT1** | 78.0%, all four corners (0,0,0) | black plate |
+| BMW `bmw.dds` (256x64) | **DXT1** | 69.9%, all four corners (0,0,0) | black plate |
+| `Ford Focus Mk3`'s `ford.dds` (128x64) | **DXT5** | 73.9% of pixels at **alpha 0** | renders correctly |
+
+**DXT1 has no alpha channel.** The black background is not a default or a missing-file placeholder;
+it is stored in the pixels, so the game draws it. The working reference is DXT5, which does carry
+alpha. That single difference is the entire black box, and it can only be fixed in the file.
+
+### What was checked before touching anything
+
+- **The `.tobj` does not need rewriting.** Across **2205 real `.tobj`/`.dds` pairs** in the mod
+  folder, DXT1 and DXT5 textures appear with byte-identical `.tobj` field values
+  (`DXT1, F14=1, F1C=0x03` ×34 alongside `DXT5, F14=1, F1C=0x03` ×1247). The compiled object
+  carries the absolute `.dds` path plus sampler state, not the compression format. So overwriting
+  the `.dds` **in place, under its own name**, keeps the whole
+  `.mat` → bare-name `.tobj` → absolute-path `.dds` chain resolving with no binary rewriting.
+### A second, pre-existing crash found while testing this
+
+`FindBrandLogoMaterial` **prefers** `car_brand_logo`, which is right — it stops a re-run clobbering a
+good car-shop logo with the truck-era copy. But it means that for any mod which already ships
+`car_brand_logo/`, `sourceFolder` and `targetFolder` in `EnsureCarBrandLogo` are the same directory,
+so the copy becomes:
+
+    File.Copy(x, x, overwrite: true)   ->  IOException: file is being used by another process
+
+and that exception aborts the **whole conversion**, not just the logo step. It is reachable by
+converting a mod that has already been converted, and by any mod released with both folders.
+
+The first fix was wrong in an instructive way: `string.Equals(from, to, OrdinalIgnoreCase)` did
+**not** match, because the folder constants are written with forward slashes
+(`"material/ui/car_brand_logo"`) and `Path.Combine` keeps them verbatim on Windows. The same file
+reached two different ways is spelled two different ways:
+
+    C:\temp\x\material\ui\car_brand_logo\volvo_cars.mat
+    C:\temp\x\material/ui/car_brand_logo\volvo_cars.mat
+    string.Equals   : False
+    GetFullPath eq  : True
+
+So the comparison goes through `Path.GetFullPath`. Worth remembering: **path identity on Windows is
+not string identity** once forward slashes are in play, and `File.Copy(x, x)` throws rather than
+being a no-op.
+
+This was found only because a test was written for it and then observed to crash the entire suite.
+It had nothing to do with transparency, and would otherwise have shipped as an intermittent
+"conversion failed" on any second run.
+
+- **Both logo folders have to be converted.** The car-shop copy's `.tobj` points back at
+  `/material/ui/brand_logo/<brand>.dds`, so correcting only `car_brand_logo/` would leave the box.
+
+### The encoder mistake worth remembering
+
+The first implementation decoded the DXT1 to RGBA, knocked out the background, and re-encoded the
+whole thing as DXT5 with a fresh palette fit per block. It passed every alpha assertion — the
+silhouette was correct, no black on the border, most of the frame transparent.
+
+It was **wrong**, and only a pixel-level comparison caught it:
+
+    worst pixel: src=(123,4,33) -> out=(156,255,181)      worst error 251/channel
+    341 pixels off by >64 out of 981
+
+Volvo's red was coming back green. A BC1 block holds only **four palette entries**, so re-fitting
+them from decoded pixels lands the artwork on different colours than the author chose. The
+bounding-box fit is not the author's optimum and cannot be.
+
+**The fix was to stop re-encoding colour at all.** DXT5's colour block is the same BC1 block DXT1
+uses, so every source colour block is copied across **byte for byte** and only the 8-byte alpha
+block in front of it is synthesised. The result is provably identical artwork rather than
+approximately equal — measured at `worst error 0` across all 5429 artwork pixels of the real Volvo
+and BMW logos. The lesson generalises: **when adding a channel to a block-compressed texture, copy
+the blocks that already exist rather than regenerating them.**
+
+### Alpha: fill from the border, never key by colour
+
+A global "make black transparent" pass destroys these logos — the BMW roundel is black and white
+and the Volvo badge has a black interior. The knock-out is a flood fill seeded from the image
+border, so it reaches the background field and stops at the first pixel too light to be background;
+interior black survives. Edge pixels caught between the two thresholds get a scaled alpha instead of
+being forced opaque, which is what prevents a dark rim around anti-aliased lettering.
+
+Both guards matter: a frame that is under 10% background has nothing to remove, and one over 98.5%
+has no logo left, so both bail out and leave the original byte-identical rather than guessing.
+
+### Process lesson
+
+The alpha assertions all passed while the colour was badly wrong, because alpha was the thing being
+tested and colour was assumed rather than measured. Comparing **against the source image** — not
+against an expectation — is what exposed it. A test that checks the property you just implemented
+will not notice the property you broke.
+

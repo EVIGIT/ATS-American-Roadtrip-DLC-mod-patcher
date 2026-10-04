@@ -1,22 +1,5 @@
-using System.Diagnostics;
 using System.Drawing.Drawing2D;
-using System.Drawing.Text;
-using System.Runtime.InteropServices;
-using System.Windows.Forms;
-using System.Collections.Generic;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 namespace ATSRoadTripConverter;
-internal enum ThemeAccess
-{
-    /// <summary>Anyone can use it, signed in or not.</summary>
-    Free,
-    /// <summary>Unlocked by signing in with GitHub.</summary>
-    GitHub,
-    /// <summary>Reserved for Ko-fi supporters once that sign-in exists.</summary>
-    KoFi
-}
-
 internal sealed record ThemePalette(
     string Name,
     Color Background,
@@ -25,39 +8,29 @@ internal sealed record ThemePalette(
     Color Border,
     Color Text,
     Color Muted,
-    Color Accent,
-    ThemeAccess Access = ThemeAccess.Free);
+    Color Accent);
 
 internal static class Theme
 {
     public static IReadOnlyList<ThemePalette> Palettes { get; } = Array.AsReadOnly(new[]
     {
-        // Order matters: the swatch grid lists the free palettes first, then the GitHub
-        // tier, then the Ko-fi tier, so each group sits side by side.
         new ThemePalette("Roadtrip", Color.FromArgb(13, 16, 21), Color.FromArgb(20, 25, 34), Color.FromArgb(27, 33, 44), Color.FromArgb(38, 46, 60), Color.FromArgb(233, 237, 244), Color.FromArgb(139, 149, 167), Color.FromArgb(255, 138, 61)),
         new ThemePalette("Daylight", Color.FromArgb(245, 247, 250), Color.FromArgb(255, 255, 255), Color.FromArgb(238, 241, 246), Color.FromArgb(222, 228, 237), Color.FromArgb(16, 21, 28), Color.FromArgb(92, 103, 120), Color.FromArgb(37, 99, 235)),
         new ThemePalette("Steel", Color.FromArgb(17, 19, 23), Color.FromArgb(24, 27, 32), Color.FromArgb(32, 36, 43), Color.FromArgb(44, 49, 58), Color.FromArgb(232, 236, 240), Color.FromArgb(146, 155, 167), Color.FromArgb(158, 190, 219)),
-        new ThemePalette("Ember", Color.FromArgb(23, 15, 16), Color.FromArgb(31, 21, 23), Color.FromArgb(42, 28, 30), Color.FromArgb(57, 38, 41), Color.FromArgb(244, 233, 231), Color.FromArgb(166, 144, 142), Color.FromArgb(255, 107, 87), ThemeAccess.GitHub),
-        new ThemePalette("Obsidian", Color.FromArgb(10, 10, 12), Color.FromArgb(19, 19, 23), Color.FromArgb(28, 28, 34), Color.FromArgb(42, 42, 50), Color.FromArgb(242, 240, 234), Color.FromArgb(154, 151, 142), Color.FromArgb(227, 179, 65), ThemeAccess.GitHub),
-        new ThemePalette("Crimson", Color.FromArgb(21, 12, 14), Color.FromArgb(31, 18, 21), Color.FromArgb(43, 25, 29), Color.FromArgb(58, 34, 40), Color.FromArgb(248, 234, 236), Color.FromArgb(190, 150, 157), Color.FromArgb(255, 77, 109), ThemeAccess.GitHub),
-        new ThemePalette("Midnight", Color.FromArgb(10, 16, 26), Color.FromArgb(16, 24, 37), Color.FromArgb(23, 33, 50), Color.FromArgb(33, 46, 69), Color.FromArgb(230, 238, 247), Color.FromArgb(134, 151, 174), Color.FromArgb(76, 194, 255), ThemeAccess.KoFi),
-        new ThemePalette("Evergreen", Color.FromArgb(10, 18, 15), Color.FromArgb(16, 26, 22), Color.FromArgb(23, 36, 30), Color.FromArgb(33, 50, 42), Color.FromArgb(228, 240, 233), Color.FromArgb(134, 160, 150), Color.FromArgb(63, 217, 140), ThemeAccess.KoFi),
-        new ThemePalette("Lagoon", Color.FromArgb(9, 19, 21), Color.FromArgb(14, 29, 33), Color.FromArgb(20, 41, 46), Color.FromArgb(28, 57, 64), Color.FromArgb(224, 243, 243), Color.FromArgb(126, 165, 168), Color.FromArgb(45, 212, 191), ThemeAccess.KoFi),
-        new ThemePalette("Sandstone", Color.FromArgb(250, 246, 240), Color.FromArgb(255, 255, 255), Color.FromArgb(243, 236, 227), Color.FromArgb(226, 216, 203), Color.FromArgb(38, 31, 24), Color.FromArgb(126, 112, 95), Color.FromArgb(194, 112, 58), ThemeAccess.KoFi),
-        new ThemePalette("Aurora", Color.FromArgb(14, 12, 26), Color.FromArgb(23, 20, 40), Color.FromArgb(32, 28, 55), Color.FromArgb(45, 39, 74), Color.FromArgb(237, 234, 255), Color.FromArgb(154, 145, 190), Color.FromArgb(167, 139, 250), ThemeAccess.KoFi),
-        new ThemePalette("Vapor", Color.FromArgb(20, 11, 36), Color.FromArgb(29, 16, 51), Color.FromArgb(40, 26, 71), Color.FromArgb(59, 39, 102), Color.FromArgb(242, 234, 255), Color.FromArgb(168, 150, 201), Color.FromArgb(255, 79, 216), ThemeAccess.KoFi)
+        new ThemePalette("Ember", Color.FromArgb(23, 15, 16), Color.FromArgb(31, 21, 23), Color.FromArgb(42, 28, 30), Color.FromArgb(57, 38, 41), Color.FromArgb(244, 233, 231), Color.FromArgb(166, 144, 142), Color.FromArgb(255, 107, 87)),
+        new ThemePalette("Obsidian", Color.FromArgb(10, 10, 12), Color.FromArgb(19, 19, 23), Color.FromArgb(28, 28, 34), Color.FromArgb(42, 42, 50), Color.FromArgb(242, 240, 234), Color.FromArgb(154, 151, 142), Color.FromArgb(227, 179, 65)),
+        new ThemePalette("Crimson", Color.FromArgb(21, 12, 14), Color.FromArgb(31, 18, 21), Color.FromArgb(43, 25, 29), Color.FromArgb(58, 34, 40), Color.FromArgb(248, 234, 236), Color.FromArgb(190, 150, 157), Color.FromArgb(255, 77, 109)),
+        new ThemePalette("Midnight", Color.FromArgb(10, 16, 26), Color.FromArgb(16, 24, 37), Color.FromArgb(23, 33, 50), Color.FromArgb(33, 46, 69), Color.FromArgb(230, 238, 247), Color.FromArgb(134, 151, 174), Color.FromArgb(76, 194, 255)),
+        new ThemePalette("Evergreen", Color.FromArgb(10, 18, 15), Color.FromArgb(16, 26, 22), Color.FromArgb(23, 36, 30), Color.FromArgb(33, 50, 42), Color.FromArgb(228, 240, 233), Color.FromArgb(134, 160, 150), Color.FromArgb(63, 217, 140)),
+        new ThemePalette("Lagoon", Color.FromArgb(9, 19, 21), Color.FromArgb(14, 29, 33), Color.FromArgb(20, 41, 46), Color.FromArgb(28, 57, 64), Color.FromArgb(224, 243, 243), Color.FromArgb(126, 165, 168), Color.FromArgb(45, 212, 191)),
+        new ThemePalette("Sandstone", Color.FromArgb(250, 246, 240), Color.FromArgb(255, 255, 255), Color.FromArgb(243, 236, 227), Color.FromArgb(226, 216, 203), Color.FromArgb(38, 31, 24), Color.FromArgb(126, 112, 95), Color.FromArgb(194, 112, 58)),
+        new ThemePalette("Aurora", Color.FromArgb(14, 12, 26), Color.FromArgb(23, 20, 40), Color.FromArgb(32, 28, 55), Color.FromArgb(45, 39, 74), Color.FromArgb(237, 234, 255), Color.FromArgb(154, 145, 190), Color.FromArgb(167, 139, 250)),
+        new ThemePalette("Vapor", Color.FromArgb(20, 11, 36), Color.FromArgb(29, 16, 51), Color.FromArgb(40, 26, 71), Color.FromArgb(59, 39, 102), Color.FromArgb(242, 234, 255), Color.FromArgb(168, 150, 201), Color.FromArgb(255, 79, 216))
     });
 
-    private static ThemePalette CurrentPalette
-    {
-        get
-        {
-            var palette = Palettes.FirstOrDefault(palette => palette.Name.Equals(SettingsManager.Current.ThemeName, StringComparison.OrdinalIgnoreCase)) ?? Palettes[0];
-            // Defence in depth: a locked theme can never paint, even if the stored
-            // preference somehow still points at one while signed out.
-            return IsLocked(palette) ? Palettes[0] : palette;
-        }
-    }
+    private static ThemePalette CurrentPalette =>
+        Palettes.FirstOrDefault(palette => palette.Name.Equals(SettingsManager.Current.ThemeName, StringComparison.OrdinalIgnoreCase))
+            ?? Palettes[0];
 
     public static Color Background => CurrentPalette.Background;
     public static Color Surface => CurrentPalette.Surface;
@@ -65,36 +38,16 @@ internal static class Theme
     public static Color Border => CurrentPalette.Border;
     public static Color Text => CurrentPalette.Text;
     public static Color Muted => CurrentPalette.Muted;
-    /// <summary>Warm gold used to outline the themes a GitHub sign-in unlocks.</summary>
-    public static readonly Color SupporterGold = Color.FromArgb(227, 179, 65);
 
-    /// <summary>Ko-fi's pink, used to outline the themes Ko-fi support will unlock.</summary>
-    public static readonly Color KoFiPink = Color.FromArgb(255, 94, 91);
-
-    /// <summary>The colour a locked palette is outlined with.</summary>
-    public static Color LockColor(ThemeAccess access) => access == ThemeAccess.KoFi ? KoFiPink : SupporterGold;
-
-    /// <summary>True when the current visitor can actually use this palette.</summary>
-    public static bool IsUnlocked(ThemePalette palette) => palette.Access switch
+    /// <summary>Lists palette names for prompts, e.g. "Crimson, Obsidian and Ember".</summary>
+    public static string ThemeNamesFor(IEnumerable<string> names)
     {
-        ThemeAccess.Free => true,
-        ThemeAccess.GitHub => AuthSession.HasGitHubAccess || AuthSession.HasKoFiAccess,
-        ThemeAccess.KoFi => AuthSession.HasKoFiAccess,
-        _ => true
-    };
-
-    /// <summary>True while a palette is reserved and cannot be selected.</summary>
-    public static bool IsLocked(ThemePalette palette) => !IsUnlocked(palette);
-
-    /// <summary>Lists one tier's palettes for prompts, e.g. "Crimson, Obsidian and Ember".</summary>
-    public static string ThemeNamesFor(ThemeAccess access)
-    {
-        var names = Palettes.Where(palette => palette.Access == access).Select(palette => palette.Name).ToArray();
-        return names.Length switch
+        var list = names.ToArray();
+        return list.Length switch
         {
-            0 => access == ThemeAccess.KoFi ? "the Ko-fi themes" : "the GitHub themes",
-            1 => names[0],
-            _ => string.Join(", ", names.Take(names.Length - 1)) + " and " + names[^1]
+            0 => "the themes",
+            1 => list[0],
+            _ => string.Join(", ", list.Take(list.Length - 1)) + " and " + list[^1]
         };
     }
 

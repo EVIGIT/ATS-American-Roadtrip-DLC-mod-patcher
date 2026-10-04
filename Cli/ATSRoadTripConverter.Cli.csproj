@@ -9,6 +9,10 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\ModConverter.cs" Link="ModConverter.cs" />
+    <!-- ModConverter reaches for BrandLogoAlpha to make dealer logo backgrounds transparent,
+         so the CLI has to compile it too. Linked rather than referenced for the same reason as
+         the rest: these files are shared source, not a library. -->
+    <Compile Include="..\BrandLogoAlpha.cs" Link="BrandLogoAlpha.cs" />
     <Compile Include="..\ScsArchive.cs" Link="ScsArchive.cs" />
     <Compile Include="..\HashFsArchive.cs" Link="HashFsArchive.cs" />
     <Compile Include="..\CityHash.cs" Link="CityHash.cs" />

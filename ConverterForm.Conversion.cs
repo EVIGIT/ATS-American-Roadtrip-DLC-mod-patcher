@@ -1,11 +1,5 @@
 using System.Diagnostics;
-using System.Drawing.Drawing2D;
 using System.Drawing.Text;
-using System.Runtime.InteropServices;
-using System.Windows.Forms;
-using System.Collections.Generic;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 namespace ATSRoadTripConverter;
 public sealed partial class ConverterForm : Form
 {
@@ -26,9 +20,9 @@ public sealed partial class ConverterForm : Form
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(_dealerId.Text))
+        if (string.IsNullOrWhiteSpace(_dealerId.Text) && !_useSourceBrand.Checked)
         {
-            Fail("[ERROR] Enter the dealer ID to use.");
+            Fail("[ERROR] Enter the dealer ID to use, or turn 'Keep the mod's own brand' back on.");
             return;
         }
 
@@ -41,10 +35,15 @@ public sealed partial class ConverterForm : Form
         if (SettingsManager.Current.ValidateInputBeforeConverting && !ValidateInputMod(_input.Text))
             return;
 
+        // Patch mode is off by default because it currently breaks save loading. Confirm rather
+        // than silently producing an archive the user cannot use, and say why.
+        if (_patchOnly.Checked && !ConfirmPatchModeKnownBug())
+            return;
+
         _convert.Enabled = false;
-        _convert.Text = "PATCHING...";
+        _convert.Text = "CONVERTING...";
         _progress.Value = 0;
-        SetStatus("Patching...", Theme.Info);
+        SetStatus("Converting...", Theme.Info);
 
         var verboseLogging = SettingsManager.Current.VerboseLogging;
         Action<string> logSink = verboseLogging
@@ -69,7 +68,10 @@ public sealed partial class ConverterForm : Form
                 _translateDealer.Checked,
                 _patchOnly.Checked,
                 VehicleTypeDisplayToId(_vehicleType.SelectedItem as string),
-                _mapCameras.Checked);
+                _mapCameras.Checked,
+                _namespaceAnonymous.Checked,
+                _useSourceBrand.Checked,
+                _renameBrandLogo.Checked);
 
             var result = await Task.Run(() =>
                 ModConverter.Run(
@@ -99,6 +101,8 @@ public sealed partial class ConverterForm : Form
             if (SettingsManager.Current.AutoSaveSettings)
             {
                 SettingsManager.Current.DefaultDealerId = _dealerId.Text.Trim();
+        SettingsManager.Current.KeepModBrand = _useSourceBrand.Checked;
+        SettingsManager.Current.CopyDealerLogo = _renameBrandLogo.Checked;
                 SettingsManager.Current.DefaultOutputFolder = _outputFolder.Text.Trim();
                 SettingsManager.Current.DefaultVehicleType = VehicleTypeDisplayToId(_vehicleType.SelectedItem as string);
                 SettingsManager.Current.LastInputPath = _input.Text.Trim();
@@ -133,6 +137,31 @@ public sealed partial class ConverterForm : Form
             _convert.Enabled = true;
             _convert.Text = "PATCH FOR ROAD TRIP";
         }
+    }
+
+    /// <summary>
+    /// Asks the user to confirm patch mode despite its known save-loading bug.
+    /// <para>
+    /// Patch mode is off by default, so this only fires when it was deliberately re-enabled.
+    /// The point is that a user who knows about the bug can still choose it — the original mod
+    /// stays untouched that way, which some people want — while a user who does not know is not
+    /// handed an archive that silently breaks their saves. Returning false means "do not convert".
+    /// </para>
+    /// </summary>
+    private bool ConfirmPatchModeKnownBug()
+    {
+        Write("[WARNING] Patch mode has a known bug: it can stop American Truck Simulator from " +
+              "loading saves that have used this car.");
+
+        using var confirm = new ThemedConfirmForm(
+            "Patch mode has a known bug",
+            "A patch writes an empty definition over the original mod's dealer entry, which can " +
+            "make ATS refuse to load saves (\"invalid_vehicle\"). This is being fixed in v1.3.9.1. " +
+            "Full conversion avoids it but may leave textures unconverted. Continue with the patch?",
+            "Create patch anyway",
+            "Use full conversion");
+
+        return confirm.ShowDialog(this) == DialogResult.OK;
     }
 
     private void Fail(string message)
@@ -226,8 +255,16 @@ public sealed partial class ConverterForm : Form
     }
 
     /// <summary>
+    /// <summary>
     /// Quietly records that an update check ran, at most once a day, when the
-    /// preference is enabled. Never blocks or fails the app.
+    /// preference is enabled, and tells the user when a newer release exists. Never blocks or
+    /// fails the app.
+    /// <para>
+    /// Item 6: this used to only write a log line, which nobody reads at startup. It now raises a
+    /// themed prompt. It stays a *notification* rather than an action: installing goes through the
+    /// existing Settings path, because the updater closes the app, and a modal that silently
+    /// kills the running converter would be a surprise.
+    /// </para>
     /// </summary>
     private async Task MaybeCheckForUpdatesAsync()
     {
@@ -250,10 +287,35 @@ public sealed partial class ConverterForm : Form
             if (string.IsNullOrWhiteSpace(tag))
                 return;
 
-            if (tag.Trim().TrimStart('v') == Program.AppVersion.Trim().TrimStart('v'))
+            var latest = tag.Trim();
+            if (latest.TrimStart('v') == Program.AppVersion.Trim().TrimStart('v'))
                 return;
 
-            Write($"[INFO] A newer release is available: {tag}. Use Settings > Advanced to install it.");
+            // Do not raise the same prompt twice. The tag is stored rather than a boolean, so a
+            // genuinely newer release is still announced after the user dismisses an older one.
+            if (settings.DismissedUpdateTag == latest)
+                return;
+
+            Write($"[INFO] A newer release is available: {latest}. Use Settings > Advanced to install it.");
+
+            using var notice = new ThemedConfirmForm(
+                "Update available",
+                $"Version {latest} is available. You are running {Program.AppVersion}. " +
+                "Open Settings to install it?",
+                "Open settings",
+                "Not now");
+            notice.ShowDialog(this);
+
+            if (notice.DialogResult == DialogResult.OK)
+            {
+                ShowSettings();
+                return;
+            }
+
+            // Only remember the dismissal once the prompt has actually been answered, so closing
+            // the app mid-prompt does not silently suppress the next reminder.
+            settings.DismissedUpdateTag = latest;
+            SettingsManager.Save();
         }
         catch
         {
@@ -454,11 +516,27 @@ public sealed partial class ConverterForm : Form
         return false;
     }
 
+    /// <summary>
+    /// Shows a themed acknowledge-only dialog. Every information/warning box routes through
+    /// here so notices match the app instead of falling back to a system dialog, which ignores
+    /// the palette and the dark title bar.
+    /// </summary>
+    private static void ShowNotice(IWin32Window owner, string title, string message, string acknowledgeText = "OK")
+    {
+        using var notice = new ThemedConfirmForm(
+            title,
+            message,
+            acknowledgeText,
+            string.Empty,
+            showCancel: false);
+        notice.ShowDialog(owner);
+    }
+
     private async Task BeginGitHubUpdateAsync(FlatButton updateButton)
     {
         if (Environment.GetEnvironmentVariable("DOTNET_WATCH") == "1")
         {
-            MessageBox.Show(this, "Close the Hot Reload session before updating this app.", "Update unavailable", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            ShowNotice(this, "Update unavailable", "Close the Hot Reload session before updating this app.");
             return;
         }
 
@@ -492,7 +570,7 @@ public sealed partial class ConverterForm : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, "GitHub update", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            ShowNotice(this, "GitHub update", ex.Message);
         }
         finally
         {
@@ -506,10 +584,75 @@ public sealed partial class ConverterForm : Form
         }
     }
 
-    private void ShowSettings()
+    /// <summary>
+    /// Opens the Settings page, optionally on a specific category.
+    /// <para>
+    /// Item 7: the category is a parameter rather than always defaulting to "General" so the
+    /// caller's choice can be recorded and restored on the next launch.
+    /// </para>
+    /// </summary>
+    /// <summary>
+    /// Records which page was last open, so the next launch can return to it (item 7).
+    /// <para>
+    /// Does not save to disk on its own. Settings pages hold unsaved edits that their own Save
+    /// button owns, and saving here would write a half-edited page behind the user's back — so the
+    /// value is persisted only when the app saves for another reason, or on a page switch that is
+    /// already a commit point.
+    /// </para>
+    /// </summary>
+    private void RecordLastPage(MainPage page, string? category = null)
+    {
+        var settings = SettingsManager.Current;
+        settings.LastPage = page;
+
+        // Only Settings has a sub-selection. Passing null for the other pages leaves whatever was
+        // stored alone, so returning to Settings later still lands on the category left behind.
+        if (category != null)
+            settings.LastSettingsCategory = category;
+    }
+
+    /// <summary>
+    /// Reopens the page the user was last on, once the form is visible.
+    /// <para>
+    /// Deferred to <see cref="BeginInvoke"/> by the caller so the page's controls are laid out and
+    /// the window is on screen before it is shown, rather than appearing over an unrendered form.
+    /// </para>
+    /// </summary>
+    private void RestoreLastPage()
+    {
+        var settings = SettingsManager.Current;
+        if (!settings.ReopenLastPage)
+            return;
+
+        switch (settings.LastPage)
+        {
+            case MainPage.Settings:
+                ShowSettings(settings.LastSettingsCategory);
+                break;
+            case MainPage.Changelog:
+                ShowChangelog();
+                break;
+        }
+    }
+
+    private void ShowSettings(string? categoryToOpen = null)
     {
         var settings = SettingsManager.Current;
         var settingsSaved = false;
+
+        // The four categories are declared once here because three places need the same list:
+        // the sidebar, the persisted value, and the restore path.
+        var categories = new[] { "General", "Customization", "About", "Advanced" };
+
+        // Only honour a remembered category that still exists. A category removed in a later
+        // version would otherwise silently fall back anyway; doing it explicitly keeps the
+        // persisted value from being re-saved as something the UI no longer has.
+        var selectedCategory =
+            categoryToOpen != null && categories.Contains(categoryToOpen, StringComparer.Ordinal)
+                ? categoryToOpen
+                : categories[0];
+
+        RecordLastPage(MainPage.Settings, selectedCategory);
         var settingsPage = new Panel
         {
             Dock = DockStyle.Fill,
@@ -567,7 +710,6 @@ public sealed partial class ConverterForm : Form
             Padding = new Padding(0, 20, 0, 0)
         };
 
-        var selectedCategory = "General";
         var contentPanel = new Panel
         {
             Dock = DockStyle.Fill,
@@ -603,6 +745,7 @@ public sealed partial class ConverterForm : Form
         var rememberWindowLayout = settings.RememberWindowLayout;
         var validateInputBeforeConverting = settings.ValidateInputBeforeConverting;
         var checkForUpdatesAutomatically = settings.CheckForUpdatesAutomatically;
+        var reopenLastPage = settings.ReopenLastPage;
         var openOutputFolderAfterConversion = settings.OpenOutputFolderAfterConversion;
         var maxLogLines = settings.MaxLogLines;
 
@@ -676,37 +819,32 @@ public sealed partial class ConverterForm : Form
                 y += 86;
             }
 
-            // Re-opens the sign-in window from inside Settings and repaints everything that
-        // depends on the account state.
-        void PromptSignIn()
+            // Used by the About tab below. Declared before the switch so the tab reads as one block.
+        void AddAboutHeading(string text)
         {
-            using var signIn = new SignInForm();
-            signIn.ShowDialog(settingsPage);
-            ApplyAccountChange();
+            contentScroll.Controls.Add(new Label
+            {
+                Text = text.ToUpperInvariant(),
+                Font = Theme.UiFont(8.5f, FontStyle.Bold),
+                ForeColor = Theme.Accent,
+                AutoSize = true,
+                Location = new Point(0, y)
+            });
+            y += 20;
         }
 
-        // Signing in or out can unlock/relock themes, so the staged theme and accent are
-        // resynced with the stored settings and the page is rebuilt.
-        void ApplyAccountChange()
+        void AddAboutText(string text, int height)
         {
-            var previousAccent = Theme.Accent;
-            var staged = Theme.Palettes.FirstOrDefault(palette => palette.Name.Equals(selectedTheme, StringComparison.OrdinalIgnoreCase));
-            if (staged != null && Theme.IsLocked(staged))
+            contentScroll.Controls.Add(new Label
             {
-                selectedTheme = Theme.Palettes[0].Name;
-                settings.ThemeName = selectedTheme;
-                var presetAccent = Theme.PresetAccent(selectedTheme);
-                accentColor = $"#{presetAccent.R:X2}{presetAccent.G:X2}{presetAccent.B:X2}";
-                settings.AccentColor = accentColor;
-                if (accentInput != null)
-                    accentInput.Text = accentColor;
-            }
-
-            ApplySettingsAppearance(this, 1f, previousAccent);
-            ApplySettingsAppearance(settingsPage, 1f, previousAccent);
-            TryEnableDarkTitleBar();
-            ApplyThemedBranding();
-            UpdateContent(selectedCategory);
+                Text = text,
+                Font = Theme.UiFont(8.75f),
+                ForeColor = Theme.Muted,
+                AutoSize = false,
+                Size = new Size(fieldWidth, height),
+                Location = new Point(0, y)
+            });
+            y += height + 6;
         }
 
         switch (category)
@@ -778,7 +916,8 @@ public sealed partial class ConverterForm : Form
                     y += 28;
 
                     AddOption("Remember window size and position", rememberWindowLayout, value => rememberWindowLayout = value);
-                    AddOption("Check the selected mod before converting", validateInputBeforeConverting, value => validateInputBeforeConverting = value);
+                    AddOption("Reopen the last page on launch", reopenLastPage, value => reopenLastPage = value);
+            AddOption("Check the selected mod before converting", validateInputBeforeConverting, value => validateInputBeforeConverting = value);
                     AddOption("Check for updates automatically", checkForUpdatesAutomatically, value => checkForUpdatesAutomatically = value);
 
                     contentScroll.Controls.Add(new Label
@@ -803,9 +942,7 @@ public sealed partial class ConverterForm : Form
                     });
                     contentScroll.Controls.Add(new Label
                     {
-                        Text = AuthSession.HasGitHubAccess && AuthSession.HasKoFiAccess
-                            ? "Choose a coordinated palette for the app. Every theme is unlocked."
-                            : $"Free: {Theme.ThemeNamesFor(ThemeAccess.Free)}. Gold outline: GitHub sign-in. Pink outline: Ko-fi.",
+                        Text = $"All {Theme.Palettes.Count} themes are available: {Theme.ThemeNamesFor(Theme.Palettes.Select(p => p.Name))}.",
                         Font = Theme.UiFont(8.75f),
                         ForeColor = Theme.Muted,
                         // Capped at the content width so a long line can never widen the
@@ -830,29 +967,6 @@ public sealed partial class ConverterForm : Form
                         var swatch = new ThemeSwatch(palette)
                         {
                             Selected = palette.Name.Equals(selectedTheme, StringComparison.OrdinalIgnoreCase)
-                        };
-                        swatch.LockedClicked += (_, _) =>
-                        {
-                            if (palette.Access == ThemeAccess.KoFi)
-                            {
-                                using var comingSoon = new ThemedConfirmForm(
-                                    "Ko-fi theme",
-                                    $"{palette.Name} unlocks with Ko-fi support, along with {Theme.ThemeNamesFor(ThemeAccess.KoFi)}. "
-                                        + "Ko-fi sign-in is not available yet, so this one stays locked for now.",
-                                    "Got it",
-                                    string.Empty,
-                                    showCancel: false);
-                                comingSoon.ShowDialog(settingsPage);
-                                return;
-                            }
-
-                            using var prompt = new ThemedConfirmForm(
-                                "GitHub theme",
-                                $"{palette.Name} unlocks with a GitHub sign-in, along with {Theme.ThemeNamesFor(ThemeAccess.GitHub)}.",
-                                "Sign in with GitHub",
-                                "Not now");
-                            if (prompt.ShowDialog(settingsPage) == DialogResult.OK)
-                                PromptSignIn();
                         };
                         swatch.Click += (_, _) =>
                         {
@@ -985,98 +1099,83 @@ public sealed partial class ConverterForm : Form
                     AddField("Font Size", "Base interface text size", fontSizeInput);
                     break;
 
-                case "Accounts":
+                case "About":
+                    // This tab used to be "Accounts". There is no account any more, so it now
+                    // carries the information that is actually worth surfacing about the build.
                     contentScroll.Controls.Add(new Label
                     {
-                        Text = "Account",
-                        Font = Theme.UiFont(10f, FontStyle.Bold),
+                        Text = Program.AppName,
+                        Font = Theme.UiFont(13f, FontStyle.Bold),
                         ForeColor = Theme.Text,
                         AutoSize = true,
                         Location = new Point(0, y)
                     });
-                    var accountRow = new Panel { Size = new Size(fieldWidth, 34), BackColor = Color.Transparent, Location = new Point(0, y + 28) };
-                    var accountSignInButton = new FlatButton
-                    {
-                        Text = "Sign in with GitHub",
-                        Size = new Size(190, 34),
-                        Location = new Point(0, 0),
-                        Visible = !AuthSession.IsSignedIn
-                    };
-                    var accountSignOutButton = new FlatButton
-                    {
-                        Text = "Sign out",
-                        Size = new Size(100, 34),
-                        Location = new Point(200, 0),
-                        Visible = AuthSession.IsSignedIn
-                    };
-                    accountSignInButton.Click += (_, _) => PromptSignIn();
-                    accountSignOutButton.Click += (_, _) =>
-                    {
-                        AuthSession.SignOut();
-                        ApplyAccountChange();
-                    };
-                    accountRow.Controls.Add(accountSignInButton);
-                    accountRow.Controls.Add(accountSignOutButton);
-                    contentScroll.Controls.Add(accountRow);
+                    y += 26;
 
-                    // Ko-fi is not wired up yet, so the button stays greyed out and inert
-                    // until the membership check lands in HasKoFiAccess.
-                    var kofiRow = new Panel { Size = new Size(fieldWidth, 34), BackColor = Color.Transparent, Location = new Point(0, y + 68) };
-                    var kofiSignInButton = new FlatButton
+                    contentScroll.Controls.Add(new Label
                     {
-                        Text = "Sign in with Ko-fi (coming soon)",
-                        Size = new Size(250, 34),
-                        Location = new Point(0, 0),
-                        Enabled = false
+                        Text = $"Version {Program.AppVersion}",
+                        Font = Theme.UiFont(9f),
+                        ForeColor = Theme.Accent,
+                        AutoSize = true,
+                        Location = new Point(0, y)
+                    });
+                    y += 26;
+
+                    AddAboutText(
+                        "Converts American Truck Simulator truck mods into Road Trip car mods, and "
+                        + "turns into a general ATS and ETS2 toolkit.",
+                        40);
+                    y += 48;
+
+                    AddAboutHeading("Free software");
+                    AddAboutText(
+                        "This tool is free. There is no account, no sign-in and no paid unlock. "
+                        + "Every theme is available and nothing about you is collected or stored.",
+                        40);
+                    y += 54;
+
+                    AddAboutHeading("Credits");
+                    AddAboutText(
+                        "American Truck Simulator and Euro Truck Simulator 2 are created by SCS "
+                        + "Software. This is an unofficial community tool and is not affiliated "
+                        + "with or endorsed by SCS Software.",
+                        42);
+                    y += 56;
+
+                    AddAboutHeading("Project");
+                    AddAboutText(
+                        "Source, releases and the full changelog are on GitHub. The Changelog page "
+                        + "in this app, reachable from the header, shows what changed, and the "
+                        + "launch page at startup lists anything new since the version you last ran.",
+                        42);
+                    y += 54;
+
+                    var repoLink = new FlatButton
+                    {
+                        Text = "Open project on GitHub",
+                        Size = new Size(230, 34),
+                        Location = new Point(0, y)
                     };
-                    kofiRow.Controls.Add(kofiSignInButton);
-                    contentScroll.Controls.Add(kofiRow);
-                    y += 116;
-
-                    // Mirrors the swatch outlines so the two unlock routes are obvious: gold for
-                    // GitHub, pink for Ko-fi.
-                    void AddAccessSection(Color dot, string title, string description)
+                    repoLink.Click += (_, _) =>
                     {
-                        contentScroll.Controls.Add(new Panel
+                        try
                         {
-                            Size = new Size(10, 10),
-                            BackColor = dot,
-                            Location = new Point(1, y + 6)
-                        });
-                        contentScroll.Controls.Add(new Label
+                            using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                            {
+                                FileName = "https://github.com/" + GitHubReleaseClient.Repository,
+                                UseShellExecute = true
+                            });
+                        }
+                        catch (Exception ex)
                         {
-                            Text = title,
-                            Font = Theme.UiFont(10f, FontStyle.Bold),
-                            ForeColor = Theme.Text,
-                            AutoSize = true,
-                            Location = new Point(20, y)
-                        });
-                        contentScroll.Controls.Add(new Label
-                        {
-                            Text = description,
-                            Font = Theme.UiFont(8.75f),
-                            ForeColor = Theme.Muted,
-                            AutoSize = false,
-                            Size = new Size(fieldWidth - 24, 42),
-                            Location = new Point(20, y + 22)
-                        });
-                        y += 68;
-                    }
-
-                    AddAccessSection(
-                        Theme.Muted,
-                        "Free themes",
-                        $"{Theme.ThemeNamesFor(ThemeAccess.Free)} need no account at all.");
-                    AddAccessSection(
-                        Theme.SupporterGold,
-                        "GitHub themes",
-                        AuthSession.HasGitHubAccess
-                            ? $"{Theme.ThemeNamesFor(ThemeAccess.GitHub)} are unlocked with this account."
-                            : $"{Theme.ThemeNamesFor(ThemeAccess.GitHub)} unlock with a GitHub sign-in.");
-                    AddAccessSection(
-                        Theme.KoFiPink,
-                        "Ko-fi themes",
-                        $"{Theme.ThemeNamesFor(ThemeAccess.KoFi)} unlock with Ko-fi support, which is coming soon.");
+                            // Opening a browser is a convenience. A machine with no registered
+                            // browser must not take the app down.
+                            System.Diagnostics.Debug.WriteLine($"Could not open the browser: {ex.Message}");
+                        }
+                    };
+                    contentScroll.Controls.Add(repoLink);
+                    y += 46;
                     break;
 
                 case "Advanced":
@@ -1142,6 +1241,17 @@ public sealed partial class ConverterForm : Form
                     AddOption("Open the output folder when a conversion finishes", openOutputFolderAfterConversion,
                         value => openOutputFolderAfterConversion = value);
 
+                    // The launch page is the quick start on a first run and "what's new"
+                    // afterwards, so this is how a user stops seeing it.
+                    AddOption(
+                        "Show the launch page at startup",
+                        SettingsManager.Current.ShowLaunchPage,
+                        value =>
+                        {
+                            SettingsManager.Current.ShowLaunchPage = value;
+                            settingsSaved = false;
+                        });
+
                     var maxLogInput = new NumericUpDown
                     {
                         Minimum = 200,
@@ -1166,7 +1276,7 @@ public sealed partial class ConverterForm : Form
                     {
                         using var confirm = new ThemedConfirmForm(
                             "Reset all settings",
-                            "Every preference returns to its default. Your account, unlocked themes and converted mods are not affected.",
+                            "Every preference returns to its default. Your converted mods are not affected.",
                             "Reset settings",
                             "Cancel");
                         if (confirm.ShowDialog(settingsPage) != DialogResult.OK)
@@ -1183,7 +1293,7 @@ public sealed partial class ConverterForm : Form
             }
         }
 
-        var categories = new[] { "General", "Customization", "Accounts", "Advanced" };
+
         var categoryButtons = new List<FlatButton>();
         var sidebarY = 20;
 
@@ -1200,6 +1310,7 @@ public sealed partial class ConverterForm : Form
             btn.Click += (_, _) =>
             {
                 selectedCategory = category;
+                RecordLastPage(MainPage.Settings, category);
                 foreach (var b in categoryButtons)
                 {
                     b.Primary = b.Text == category;
@@ -1239,7 +1350,7 @@ public sealed partial class ConverterForm : Form
             }
             catch
             {
-                MessageBox.Show(settingsPage, "Enter a valid accent color, such as #FF9128.", "Invalid Color", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                ShowNotice(settingsPage, "Invalid Color", "Enter a valid accent color, such as #FF9128.");
                 return;
             }
 
@@ -1258,6 +1369,7 @@ public sealed partial class ConverterForm : Form
             settings.RememberWindowLayout = rememberWindowLayout;
             settings.ValidateInputBeforeConverting = validateInputBeforeConverting;
             settings.CheckForUpdatesAutomatically = checkForUpdatesAutomatically;
+        settings.ReopenLastPage = reopenLastPage;
             settings.OpenOutputFolderAfterConversion = openOutputFolderAfterConversion;
             settings.MaxLogLines = Math.Clamp(maxLogLines, 200, 100_000);
             SettingsManager.Save();
@@ -1454,6 +1566,7 @@ public sealed partial class ConverterForm : Form
 
     private void ShowChangelog()
     {
+        RecordLastPage(MainPage.Changelog);
         if (_activePage != null)
             return;
 

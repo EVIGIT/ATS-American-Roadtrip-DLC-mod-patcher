@@ -1,11 +1,4 @@
-using System.Diagnostics;
 using System.Drawing.Drawing2D;
-using System.Drawing.Text;
-using System.Runtime.InteropServices;
-using System.Windows.Forms;
-using System.Collections.Generic;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 namespace ATSRoadTripConverter;
 internal sealed class ThemeSwatch : Control
 {
@@ -17,12 +10,6 @@ internal sealed class ThemeSwatch : Control
     // from the same numbers the control actually uses.
     public static readonly Size SwatchSize = new(88, 50);
     public static readonly int SwatchMargin = 3;
-
-    /// <summary>True while this palette is reserved and the visitor cannot use it yet.</summary>
-    public bool IsLocked => Theme.IsLocked(Palette);
-
-    /// <summary>Raised instead of <see cref="Control.Click"/> when a locked swatch is used.</summary>
-    public event EventHandler? LockedClicked;
 
     public bool Selected
     {
@@ -62,12 +49,6 @@ internal sealed class ThemeSwatch : Control
 
     protected override void OnClick(EventArgs e)
     {
-        if (IsLocked)
-        {
-            LockedClicked?.Invoke(this, EventArgs.Empty);
-            return;
-        }
-
         base.OnClick(e);
     }
 
@@ -99,34 +80,10 @@ internal sealed class ThemeSwatch : Control
         TextRenderer.DrawText(g, Palette.Name, Font, new Rectangle(8, 25, Width - 16, 20), Palette.Text,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
-        if (IsLocked)
-            PaintLocked(g, cardPath);
-
-        // A selected swatch keeps its own accent; a locked one is outlined in the colour
-        // of the tier that unlocks it, gold for GitHub and pink for Ko-fi.
-        var borderColor = _selected ? Palette.Accent : IsLocked ? Theme.LockColor(Palette.Access) : Theme.Border;
-        using var border = new Pen(borderColor, _selected ? 2f : IsLocked ? 1.5f : 1f);
+        // A selected swatch keeps its own accent; the rest use the palette border.
+        var borderColor = _selected ? Palette.Accent : Theme.Border;
+        using var border = new Pen(borderColor, _selected ? 2f : 1f);
         g.DrawPath(border, cardPath);
-    }
-
-    // A reserved palette stays visible so people know it exists, but it is dimmed back
-    // towards the page background and stamped with a padlock.
-    private void PaintLocked(Graphics g, GraphicsPath cardPath)
-    {
-        using (var veil = new SolidBrush(Color.FromArgb(168, Theme.Background)))
-            g.FillPath(veil, cardPath);
-
-        var nameRect = new Rectangle(8, 25, Width - 30, 20);
-        TextRenderer.DrawText(g, Palette.Name, Font, nameRect, Theme.Muted,
-            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-
-        var lockColor = Theme.LockColor(Palette.Access);
-        var lockLeft = Width - 19f;
-        var lockTop = 31f;
-        using (var shackle = new Pen(lockColor, 1.6f))
-            g.DrawArc(shackle, lockLeft + 1.6f, lockTop - 4.5f, 6.8f, 6.8f, 180f, 180f);
-        using (var body = new SolidBrush(lockColor))
-            g.FillRectangle(body, lockLeft, lockTop, 10f, 8f);
     }
 }
 
@@ -167,8 +124,7 @@ internal sealed class FlatButton : Control
     public int CornerRadius { get; set; } = 10;
 
     /// <summary>
-    /// Paints the button in this colour regardless of the active theme. Used for
-    /// brand-locked actions such as Ko-fi, which must stay Ko-fi pink.
+    /// Paints the button in this colour regardless of the active theme.
     /// </summary>
     public Color? AccentOverride { get; set; }
 

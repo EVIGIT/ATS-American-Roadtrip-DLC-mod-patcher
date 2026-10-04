@@ -1,20 +1,40 @@
-using System.Diagnostics;
 using System.Drawing.Drawing2D;
-using System.Drawing.Text;
 using System.Runtime.InteropServices;
-using System.Windows.Forms;
-using System.Collections.Generic;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 namespace ATSRoadTripConverter;
 public sealed partial class ConverterForm : Form
 {
     // The trailing underscore is deliberate: plain "Margin" collides with the inherited
     // Form.Margin and will not compile (CS0108).
-    private const int Margin_ = 24;
+    //
+    // The vertical budget lives in MainLayout so it can be asserted headlessly instead of being
+    // re-derived by eye from this file. These aliases keep the existing call sites readable.
+    private const int Margin_ = MainLayout.MainLayoutMargin;
     private const int ContentWidth = 812;
+
+    /// <summary>
+    /// Options card height, aliasing <see cref="MainLayout.OptionsCardHeight"/> rather than
+    /// repeating the literal.
+    /// <para>
+    /// The two dealer-branding toggles were placed in the row layout that already existed
+    /// instead of on a row of their own, which is what kept this height unchanged. Adding a
+    /// fifth row would have pushed the default window to 1150px and started a scrollbar on any
+    /// 1080p desktop, so the card and the window budget both stayed where they were.
+    /// </para>
+    /// </summary>
+    private const int OptionsCardHeight = MainLayout.OptionsCardHeight;
+
+    /// <summary>
+    /// Extra chrome above the log card that is not already counted in
+    /// <see cref="MainLayout.ContentAboveLog"/>. Zero today; a tab strip will raise it, and the
+    /// window budget has to rise by exactly the same amount or the log gets squeezed and the
+    /// scrollbar comes back.
+    /// </summary>
+    private const int ExtraChromeAboveLog = 0;
+
     private Panel? _activePage;
     private Dictionary<Control, bool>? _mainViewPreviousVisibility;
+    private Card? _logCard;
+    private int _logCardTop;
 
     private readonly TextBox _input = CreateField(readOnly: true);
     private readonly TextBox _outputFolder = CreateField(readOnly: true);
@@ -38,10 +58,16 @@ public sealed partial class ConverterForm : Form
         AutoEllipsis = true
     };
 
+    // Patch mode is OFF by default as of v1.3.9. It writes a 13-byte empty unit tree over the
+    // original mod's truck_dealer entry, which overrides that definition with nothing and makes
+    // ATS refuse to load any save that has driven the car ("invalid_vehicle"). Verified in game;
+    // see the ROADMAP research note. It stays available because it is the only mode that leaves
+    // the original mod untouched, and it is the right shape once the stub is fixed in v1.3.9.1.
     private readonly ToggleSwitch _patchOnly = new()
     {
-        Text = "Definitions-only patch (recommended)",
-        Description = "Small patch loaded above the original mod; copies and converts models and textures."
+        Text = "Definitions-only patch (known bug)",
+        Description = "Leaves the original mod intact, but currently makes ATS refuse to load saves. Prefer full conversion.",
+        Checked = false
     };
 
     private readonly ToggleSwitch _moveVehicleAssets = new()
@@ -55,6 +81,27 @@ public sealed partial class ConverterForm : Form
     {
         Text = "Use Road Trip car cameras",
         Description = "Points behind/bumper/interior cameras at the built-in camera.*.car units.",
+        Checked = true
+    };
+
+    private readonly ToggleSwitch _namespaceAnonymous = new()
+    {
+        Text = "Avoid clashes with other mods",
+        Description = "Renames global _nameless units so two converted cars cannot replace each other.",
+        Checked = true
+    };
+
+    private readonly ToggleSwitch _useSourceBrand = new()
+    {
+        Text = "Keep the mod's own brand",
+        Description = "Uses the brand the mod already has, so its dealership logo keeps working.",
+        Checked = true
+    };
+
+    private readonly ToggleSwitch _renameBrandLogo = new()
+    {
+        Text = "Add the logo to a renamed dealer",
+        Description = "Only used when the dealer ID above renames the brand: copies the mod's logo to match.",
         Checked = true
     };
 
@@ -113,8 +160,14 @@ public sealed partial class ConverterForm : Form
         BackColor = Theme.Background;
         ForeColor = Theme.Text;
         Font = Theme.UiFont(9.5f);
-        ClientSize = new Size(ContentWidth + Margin_ * 2, 900);
-        MinimumSize = new Size(ContentWidth + Margin_ * 2 + 16, 700);
+        // Clamp to the working area so the window never opens taller than the screen. The cards
+        // above the log need ~816px, which a 768px display cannot show; AutoScroll handles
+        // the overflow, so the page is scrolled rather than clipped.
+        var workingArea = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1024, 768);
+        ClientSize = new Size(ContentWidth + Margin_ * 2, Math.Min(MainLayout.DefaultWindowHeight, workingArea.Height));
+        // Small enough to still open on a 768px-tall display, which a 700px minimum could not.
+        MinimumSize = new Size(ContentWidth + Margin_ * 2 + 16, Math.Min(560, workingArea.Height));
+        AutoScroll = true;
         StartPosition = FormStartPosition.CenterScreen;
         DoubleBuffered = true;
         AllowDrop = true;
@@ -126,10 +179,13 @@ public sealed partial class ConverterForm : Form
         y = BuildOptionsCard(y);
         y = BuildActionArea(y);
         BuildLogCard(y);
+        ResizeMainContent();
         RestoreWindowLayout();
 
         _dealerId.Text = SettingsManager.Current.DefaultDealerId;
         _outputFolder.Text = SettingsManager.Current.DefaultOutputFolder;
+        _useSourceBrand.Checked = SettingsManager.Current.KeepModBrand;
+        _renameBrandLogo.Checked = SettingsManager.Current.CopyDealerLogo;
         _input.TextChanged += (_, _) => { SuggestDealerId(); UpdateOutputPreview(); };
         _outputFolder.TextChanged += (_, _) => UpdateOutputPreview();
         _patchOnly.CheckedChanged += (_, _) => { UpdateMoveAssetsState(); UpdateOutputPreview(); };
@@ -140,12 +196,17 @@ public sealed partial class ConverterForm : Form
         DragEnter += OnDragEnter;
         DragDrop += OnDragDrop;
 
-        _patchOnly.Checked = true;
+        // Patch mode defaults to off in the field initializer; see the comment on _patchOnly.
         UpdateMoveAssetsState();
-        UpdateOutputPreview();
+    UpdateOutputPreview();
         Write($"[INFO] {Program.AppName} {Program.AppVersion}");
         Write("[INFO] Drag an ATS mod (.scs/.zip) onto this window or click Browse to begin.");
         _ = MaybeCheckForUpdatesAsync();
+
+        // Item 7: return to the page the user left off on, if that preference is enabled.
+        // BeginInvoke so the window is on screen and laid out before the page appears over it.
+        if (SettingsManager.Current.ReopenLastPage && SettingsManager.Current.LastPage != MainPage.Converter)
+            BeginInvoke(new Action(RestoreLastPage));
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -182,7 +243,23 @@ public sealed partial class ConverterForm : Form
         if (saved)
         {
             StartPosition = FormStartPosition.Manual;
-            Bounds = new Rectangle(settings.WindowLeft, settings.WindowTop, settings.WindowWidth, settings.WindowHeight);
+
+            // A height saved on a larger display would otherwise reopen taller than this one
+            // and reintroduce the clipped log card. Clamp to the area the rect actually sits on.
+            var height = settings.WindowHeight;
+            try
+            {
+                height = Math.Min(
+                    height,
+                    Screen.FromRectangle(new Rectangle(settings.WindowLeft, settings.WindowTop, settings.WindowWidth, settings.WindowHeight))
+                        .WorkingArea.Height);
+            }
+            catch (InvalidOperationException)
+            {
+                // Keep the saved height; the scrollable form still keeps it reachable.
+            }
+
+            Bounds = new Rectangle(settings.WindowLeft, settings.WindowTop, settings.WindowWidth, height);
         }
 
         if (settings.WindowMaximized)
@@ -339,7 +416,7 @@ public sealed partial class ConverterForm : Form
 
     private int BuildOptionsCard(int y)
     {
-        var card = AddCard(y, 352, "OPTIONS");
+        var card = AddCard(y, OptionsCardHeight, "OPTIONS");
         var half = (ContentWidth - 36 - 16) / 2;
 
         AddCaption(card, "Dealer ID", 18, 46);
@@ -376,12 +453,15 @@ public sealed partial class ConverterForm : Form
         };
         card.Controls.Add(divider);
 
-        PlaceToggle(card, _patchOnly, 18, 156, ContentWidth - 36);
-        PlaceToggle(card, _translateDealer, 18, 218, half);
-        PlaceToggle(card, _moveVehicleAssets, 18 + half + 16, 218, half);
-        PlaceToggle(card, _mapCameras, 18, 280, ContentWidth - 36);
+        // The two branding toggles below fill the row that used to hold nothing, so the card does
+        // not grow. Adding a row here would push the default window past 1080p, and 1080p is the
+        // most common desktop height - the page would start scrolling for almost everyone.
+        PlaceToggle(card, _patchOnly, 18, 156, ContentWidth - 36, stretch: true);
+        PlaceTogglePair(card, _translateDealer, _moveVehicleAssets, 218);
+        PlaceTogglePair(card, _mapCameras, _namespaceAnonymous, 280);
+        PlaceTogglePair(card, _useSourceBrand, _renameBrandLogo, 342);
 
-        return y + 352 + 16;
+        return y + OptionsCardHeight + 16;
     }
 
     private int BuildActionArea(int y)
@@ -406,29 +486,68 @@ public sealed partial class ConverterForm : Form
 
     private void BuildLogCard(int y)
     {
-        var height = ClientSize.Height - y - Margin_;
-        var card = AddCard(y, height, "LOG");
-        card.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+        _logCardTop = y;
+        _logCard = AddCard(y, MainLayout.MinimumLogCardHeight, "LOG");
+        // Deliberately not anchored to the bottom: with AutoScroll on the form, a
+        // bottom-anchored control fights the scroll extent. ResizeMainContent owns the height.
+        _logCard.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
-        _openOutput.Location = new Point(ContentWidth - 18 - 170 - 8 - 70, 10);
-        _openOutput.Size = new Size(170, 28);
+        // Button row is laid out right-to-left from the card's inner edge. It used to be three
+        // separate hard-coded expressions, and "Open output folder" was positioned as if the
+        // "Copy log" button did not exist - so Copy log (624..714) sat entirely inside Open output
+        // folder (546..716) and was invisible, added first and therefore painted over.
+        const int cardPad = 18;
+        const int clearWidth = 70;
+        const int copyWidth = 90;
+        const int openWidth = 170;
+        const int gapCopyToClear = 10;
+        const int gapOpenToCopy = 8;
+        var rowRight = ContentWidth - cardPad;
+
+        var clearX = rowRight - clearWidth;
+        var copyX = clearX - gapCopyToClear - copyWidth;
+        var openX = copyX - gapOpenToCopy - openWidth;
+
+        _openOutput.Location = new Point(openX, 10);
+        _openOutput.Size = new Size(openWidth, 28);
         _openOutput.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        var card = _logCard;
         card.Controls.Add(_openOutput);
 
-        _clearLog.Location = new Point(ContentWidth - 18 - 70, 10);
-        _clearLog.Size = new Size(70, 28);
+        _clearLog.Location = new Point(clearX, 10);
+        _clearLog.Size = new Size(clearWidth, 28);
         _clearLog.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         card.Controls.Add(_clearLog);
 
-        _copyLog.Location = new Point(ContentWidth - 18 - 70 - 10 - 90, 10);
-        _copyLog.Size = new Size(90, 28);
+        _copyLog.Location = new Point(copyX, 10);
+        _copyLog.Size = new Size(copyWidth, 28);
         _copyLog.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         card.Controls.Add(_copyLog);
 
         _log.Location = new Point(18, 48);
-        _log.Size = new Size(ContentWidth - 36, height - 66);
-        _log.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+        _log.Size = new Size(ContentWidth - 36, MainLayout.MinimumLogCardHeight - 66);
+        _log.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         card.Controls.Add(_log);
+    }
+
+    /// <summary>
+    /// Gives the log card whatever height is left over, but never less than
+    /// <see cref="MainLayout.MinimumLogCardHeight"/>. On a short screen the leftover goes negative,
+    /// the log holds its minimum, and the form scrolls instead of clipping the card off the bottom.
+    /// </summary>
+    private void ResizeMainContent()
+    {
+        if (_logCard == null || _logCard.IsDisposed)
+            return;
+
+        _logCard.Height = MainLayout.LogCardHeight(ClientSize.Height, _logCardTop, ExtraChromeAboveLog);
+        _log.Height = Math.Max(MainLayout.MinimumLogCardHeight - 66, 40);
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        ResizeMainContent();
     }
 
     private Card AddCard(int y, int height, string title)
@@ -538,13 +657,58 @@ public sealed partial class ConverterForm : Form
         return button;
     }
 
-    private static void PlaceToggle(Control parent, ToggleSwitch toggle, int x, int y, int width)
+    /// <param name="stretch">
+    /// True for a toggle that owns its whole row, so it may grow with the card. False keeps the
+    /// control at its designed width, which is required whenever a row holds more than one
+    /// control and they have to keep a gap between them.
+    /// </param>
+    private static void PlaceToggle(Control parent, ToggleSwitch toggle, int x, int y, int width, bool stretch)
     {
         toggle.Location = new Point(x, y);
         toggle.Size = new Size(width, 62);
         toggle.BackColor = Theme.Surface;
-        toggle.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        // A left+right anchor stretches the control from its left edge, which walks it straight
+        // into its neighbour on any row that holds two toggles.
+        toggle.Anchor = stretch
+            ? AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+            : AnchorStyles.Top | AnchorStyles.Left;
         parent.Controls.Add(toggle);
+    }
+
+    /// <summary>
+    /// Lays out two toggles side by side, keeping them flush against the card edges.
+    /// <para>
+    /// The left one is pinned to the left and the right one pinned to the right, both at a fixed
+    /// width. Anchoring both left+right instead is what caused a real bug: widening the window
+    /// grew the left toggle rightwards while the right toggle stayed put, so once the window grew
+    /// by more than the 16px gap the two overlapped and the higher one painted over the other,
+    /// making a switch appear to vanish behind the UI.
+    /// </para>
+    /// </summary>
+    private static void PlaceTogglePair(Control parent, ToggleSwitch left, ToggleSwitch right, int y)
+    {
+        foreach (var toggle in new[] { left, right })
+        {
+            toggle.BackColor = Theme.Surface;
+            toggle.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            parent.Controls.Add(toggle);
+        }
+
+        // Re-run on every card resize so the pair stays split down the middle instead of
+        // drifting apart as the window widens.
+        void Layout()
+        {
+            var inner = parent.ClientSize.Width - 36;
+            var half = Math.Max(160, (inner - 16) / 2);
+
+            left.Size = new Size(half, 62);
+            right.Size = new Size(half, 62);
+            left.Location = new Point(18, y);
+            right.Location = new Point(18 + half + 16, y);
+        }
+
+        parent.Resize += (_, _) => Layout();
+        Layout();
     }
 
     // Track C item 1. The remembered folder is the entry point rather than the exact
@@ -737,8 +901,9 @@ public sealed partial class ConverterForm : Form
         _moveVehicleAssets.Enabled = !_patchOnly.Checked;
         _moveVehicleAssets.Description = _patchOnly.Checked
             ? "Always copied in patch mode to vehicle/car."
-            : "Moves vehicle/truck models into vehicle/car (full conversion).";
+            : "Moves vehicle/truck models into vehicle/car. Leave on so textures and models come with the car.";
         _moveVehicleAssets.Invalidate();
+        _patchOnly.Invalidate();
     }
 
     private void UpdateOutputPreview()

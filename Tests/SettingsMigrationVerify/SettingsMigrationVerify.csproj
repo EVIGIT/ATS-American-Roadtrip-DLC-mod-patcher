@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- SettingsSchema.cs is deliberately dependency-free so the settings migration can be
+         verified without pulling in the WinForms types that Settings.cs itself needs.
+         ReleaseNotes.cs is included for the same reason: the launch page's "what's new"
+         parsing is pure text handling and needs no WinForms. MainLayout.cs is included for the
+         same reason: the window's vertical budget is arithmetic and needs no WinForms either. -->
+    <Compile Include="../../SettingsSchema.cs" Link="SettingsSchema.cs" />
+    <Compile Include="../../ReleaseNotes.cs" Link="ReleaseNotes.cs" />
+    <Compile Include="../../MainLayout.cs" Link="MainLayout.cs" />
+    <Compile Include="../../MainPage.cs" Link="MainPage.cs" />
+  </ItemGroup>
+</Project>
