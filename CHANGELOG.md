@@ -1,6 +1,6 @@
 # ATS American Roadtrip Car Patcher
 
-Current App Version: v1.3.9
+Current App Version: v1.3.9.1
 
 ## v1.3.9.1
 
@@ -10,6 +10,12 @@ Current App Version: v1.3.9
 
 ### Changed
 - SettingsMigrationVerify grew from 88 to 100 checks, covering the measured row height: that it reproduces the hand-verified card and window heights at the default font size, that it grows rather than clips at font sizes 11 and 16, that it never shrinks as the text grows, and that the last row still ends inside the card.
+
+### Known issues in this release
+- **Dealer badges are transparent, but not re-laid-out.** A wide logo can still look stretched (the BMW roundel) and a narrow one small (the Volvo badge) beside the base game's badges, and a coloured badge keeps its own colours rather than being greyscaled to match. Normalising aspect ratio, drawn size and colour is scheduled for v1.4. Carried from v1.3.9, where the underlying black background was fixed.
+- **Definitions-only patch mode can still produce `invalid_vehicle`.** It is off by default and full conversion is unaffected; the proper fix is scheduled for v1.3.9.2.
+- **Full conversion still omits the shared `automat/` and `material/ui/accessory/` asset roots**, which is the cause of the occasional unconverted texture. Scheduled for v1.3.9.2.
+- The 1080p layout is no longer outstanding. The outstanding item from v1.3.9 was to look at the option switches at half width, and that is what surfaced this release's fix.
 
 ## v1.3.9
 

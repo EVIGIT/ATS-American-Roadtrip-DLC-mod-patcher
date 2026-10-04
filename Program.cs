@@ -4,7 +4,7 @@ namespace ATSRoadTripConverter;
 internal static class Program
 {
     public const string AppName = "ATS American Roadtrip Car Patcher";
-    public const string AppVersion = "v1.3.9";
+    public const string AppVersion = "v1.3.9.1";
 
     [STAThread]
     static void Main()

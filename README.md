@@ -163,7 +163,7 @@ That last case is handled by `BrandLogoAlpha.cs`, and the approach matters:
 switch (GUI) writes a small patch to load above the original mod. It currently writes an **empty
 definition over the original mod's `truck_dealer` entry**, overriding that definition with nothing.
 ATS then refuses to load any save that has driven the car, reporting `invalid_vehicle`. Confirmed
-in game across several mods; the proper fix is scheduled for v1.3.9.1.
+in game across several mods; the proper fix is scheduled for v1.3.9.2.
 
 Until then, **use full conversion** (the default). It has a separate and lesser problem — some
 textures may not convert, and full conversion still omits the shared `automat/` and
@@ -403,6 +403,6 @@ of SCS Software; this repository contains no game assets.
 ## Further reading
 
 - [CHANGELOG.md](CHANGELOG.md) — the full release history.
-- [ROADMAP.md](ROADMAP.md) — what is planned for v1.3.9.1 and v1.4, including the known issues
+- [ROADMAP.md](ROADMAP.md) — what is planned for v1.3.9.2 and v1.4, including the known issues
   this release leaves open and why they were left.
 - [Releases](https://github.com/EVIGIT/ATS-American-Roadtrip-DLC-mod-patcher/releases) — downloads.
