@@ -4,7 +4,7 @@ namespace TruckersToolKit;
 internal static class Program
 {
     public const string AppName = "Truckers Tool Kit";
-    public const string AppVersion = "v1.4";
+    public const string AppVersion = "v1.4.1";
 
     [STAThread]
     static void Main()

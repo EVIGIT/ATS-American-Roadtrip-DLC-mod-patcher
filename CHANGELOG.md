@@ -1,6 +1,6 @@
 # Truckers Tool Kit
 
-Current App Version: v1.4
+Current App Version: v1.4.1
 
 ## v1.4
 
@@ -48,7 +48,7 @@ Current App Version: v1.4
 ### Verified in game
 - **The badge work and the texture repair are both confirmed by the maintainer**, after a full ATS restart. Converted cars render with their own textures, and the dealership badge is correct. That closes the last thing this release was waiting on: the crop and both opt-in passes had only ever been verified against the real badge files offline, and the texture fix against the archives and the game's own error log rather than on screen.
 
-## Unreleased (v1.4.1)
+## v1.4.1
 
 > **This release enables patch mode; it does not contain the fix.** The `invalid_vehicle` fix below is
 > already in **v1.4**, shipped dormant behind a setting that is off by default. Nothing here can affect
@@ -60,6 +60,25 @@ Current App Version: v1.4
 > car has been loaded from a save in game**, because that is the only test that distinguishes "the
 > patch writes correct bytes" from "the patch loads without breaking the save". Everything so far
 > proves the former.
+
+### Added
+- **A new mark for the app.** The old shield-and-sunset was not wrong, but it described a scenic
+  drive rather than a truck. The new one is a side-profile lorry on amber over the app's dark surface.
+  - Designed against the two brands a player already has on their desktop. **TruckersMP** publishes
+    exact brand values (Red `#B92025`, Black `#040608`, White `#FEFEFE`), uses a lorry silhouette as
+    its motif, and ships a deliberately simplified badge for small sizes because its wordmark dies
+    below ~32px. **SCS's** own ATS identity is a dark UI with a warm amber accent. The new mark takes
+    the shape language from the first and the palette temperature from the second.
+  - **Side profile, not front-on.** A front view is genuinely ambiguous between a car, a van and a
+    bus — the first attempt did read as a car, which is the entire reason this one exists. Everything
+    is proportioned around the three wheels, because wheel size is what separates a truck from a car
+    at a glance and it is the first thing to survive at 16px.
+  - Amber `#FF8A3D` is the app's own accent from `Theme.cs`, so the icon and the running UI agree.
+    Changing one without the other is how an icon stops matching the software it belongs to.
+  - Still generated, not hand-drawn: `Assets/make_logo.py` is committed and reproducible, and
+    `Assets/_sizes_preview.png` is a contact sheet of every icon size so legibility can be judged
+    rather than assumed. Everything is drawn at 1024 and downsampled with LANCZOS — nothing is
+    authored at icon size.
 
 > **The app is now Truckers Tool Kit.** It was "ATS American Roadtrip Car Patcher". The rename is in
 > the tree after the v1.4 tag, so v1.4 itself keeps its original name — a tagged release is not
@@ -94,22 +113,8 @@ Current App Version: v1.4
 - The conversion report header no longer hard-codes a version. It read `v12`, which was three naming
   schemes out of date by the time it was written and nothing noticed, because a version string in a
   report nobody asserts on cannot go red in a test.
-
-### Changed (previously)
-
-> **This release enables patch mode; it does not contain the fix.** The `invalid_vehicle` fix below is
-> already in **v1.4**, shipped dormant behind a setting that is off by default. Nothing here can affect
-> anyone who leaves the default alone, which is what let v1.4 go out on badge and texture verification
-> alone rather than waiting on the patcher.
->
-> So this section is not a list of changes to the code — it is the verification that has to happen
-> before the default flips, plus the flip itself. **Patch mode stays off by default until a converted
-> car has been loaded from a save in game**, because that is the only test that distinguishes "the
-> patch writes correct bytes" from "the patch loads without breaking the save". Everything so far
-> proves the former.
-
-### Changed
-- **Patch mode becomes the default**, once a converted car has been loaded from a save in game. This is the whole of the code change; the fix it depends on shipped dormant in v1.4.
+- **Patch mode becomes the default**, once a converted car has been loaded from a save in game. This
+  is the only other code change; the fix it depends on shipped dormant in v1.4.
 
 ### Fixed
 *(Shipped dormant in v1.4, behind the off-by-default setting. Listed here so the history is in one place.)*
