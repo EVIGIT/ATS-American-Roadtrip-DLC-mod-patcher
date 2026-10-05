@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using System.Drawing.Text;
-namespace ATSRoadTripConverter;
+namespace TruckersToolKit;
 public sealed partial class ConverterForm : Form
 {
     private async Task ConvertAsync()

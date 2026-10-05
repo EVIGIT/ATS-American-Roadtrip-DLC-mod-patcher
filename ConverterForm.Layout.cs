@@ -1,6 +1,6 @@
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
-namespace ATSRoadTripConverter;
+namespace TruckersToolKit;
 public sealed partial class ConverterForm : Form
 {
     // The trailing underscore is deliberate: plain "Margin" collides with the inherited

@@ -1,4 +1,4 @@
-namespace ATSRoadTripConverter;
+namespace TruckersToolKit;
 
 /// <summary>
 /// Rewrites a dealer logo texture so its background is transparent, which is what makes a

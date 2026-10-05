@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace ATSRoadTripConverter;
+namespace TruckersToolKit;
 
 /// <summary>
 /// Repairs the absolute asset paths baked into a mod's own materials and compiled textures after

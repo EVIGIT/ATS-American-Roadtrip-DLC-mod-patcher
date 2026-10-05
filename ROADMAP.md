@@ -1,4 +1,4 @@
-# ATS American Roadtrip Car Patcher — roadmap
+# Truckers Tool Kit — roadmap
 
 Status: **v1.3.9.1 released** (tagged and published) on top of v1.3.9. It carries one real
 fix — the option rows no longer clip at Font Size 11 and above — plus a correction to how the
@@ -70,8 +70,8 @@ Green, so anything found later is unambiguously ours:
 
 | Check | Result |
 | --- | --- |
-| `dotnet build ATSRoadTripConverter.sln -c Release -p:TreatWarningsAsErrors=true --no-incremental` | 0 warnings, 0 errors |
-| Same for `Cli/ATSRoadTripConverter.Cli.csproj` | 0 warnings, 0 errors |
+| `dotnet build TruckersToolKit.sln -c Release -p:TreatWarningsAsErrors=true --no-incremental` | 0 warnings, 0 errors |
+| Same for `Cli/TruckersToolKit.Cli.csproj` | 0 warnings, 0 errors |
 | `ModConverterVerify` | 13 checks pass |
 | `LocalUpdaterSmokeTest` | pass |
 
@@ -117,9 +117,9 @@ Note: the first build reported "0 warnings" only because everything was up to da
    *Recommend: delete all seven. This is the one Track A item to fix now — it is
    provable by the compiler, it is zero-risk, and it closes out a changelog claim that is
    currently only half true.*
-8. **The CLI project is in no build path at all.** `Cli/ATSRoadTripConverter.Cli.csproj`
+8. **The CLI project is in no build path at all.** `Cli/TruckersToolKit.Cli.csproj`
    exists, links the four converter sources, and is **not referenced by
-   `ATSRoadTripConverter.sln`** — it only builds when someone remembers to build it by
+   `TruckersToolKit.sln`** — it only builds when someone remembers to build it by
    hand. It shares `ModConverter.cs` with the app and both test projects, so the Track B
    fix will change it too. *Recommend: add it to the solution so the health check covers
    it. Otherwise Track B can silently break the CLI.*
@@ -152,7 +152,7 @@ tag or release until the maintainer has seen this list.**
 | # | Finding | Status |
 | --- | --- | --- |
 | 7 | Orphaned doc comments in `Program.cs` | **Fixed.** All removed. `Program.cs` is 86 → 32 lines. Compiler proof: **CS1587 14 → 0**. |
-| 8 | CLI outside the solution | **Fixed.** `Cli/ATSRoadTripConverter.Cli.csproj` added to `ATSRoadTripConverter.sln`, so the health check now covers it. |
+| 8 | CLI outside the solution | **Fixed.** `Cli/TruckersToolKit.Cli.csproj` added to `TruckersToolKit.sln`, so the health check now covers it. |
 | 9 | Backwards collision log message | **Fixed** in `MergeTree`; it now names both files correctly. |
 | 1 | Duplicated boilerplate header | **Fully fixed in v1.3.9.** The stale banner and the two mis-placed comment blocks were removed earlier, but the 8 duplicated `using` lines survived. All 10 app files now carry only the `using` lines they actually use — 80 lines down to 12, each proven necessary by the compiler. See Tranche 2. |
 | 2 | Mixed encoding | **Fixed.** All 17 files are now UTF-8 **no BOM**, CRLF-only, zero bare LF. |
@@ -526,7 +526,7 @@ called fully-qualified as `System.Diagnostics.Debug.WriteLine`, so the `using` w
 The 9 namespaces are not all boilerplate either. `ImplicitUsings=enable` already supplies
 `System`, `System.Collections.Generic`, `System.Drawing`, `System.IO`, `System.Linq`,
 `System.Net.Http`, `System.Threading`, `System.Threading.Tasks` and `System.Windows.Forms`
-(verified in `obj/.../ATSRoadTripConverter.GlobalUsings.g.cs`). That is why the whole block
+(verified in `obj/.../TruckersToolKit.GlobalUsings.g.cs`). That is why the whole block
 could go: `Program.cs`, `SignInForm.cs` and `ThemedConfirmForm.cs` now need **zero** `using`
 lines at all.
 

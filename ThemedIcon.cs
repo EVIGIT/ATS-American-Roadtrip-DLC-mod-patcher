@@ -6,7 +6,7 @@ using System.Windows.Forms;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-namespace ATSRoadTripConverter;
+namespace TruckersToolKit;
 internal static class ThemedIcon
 {
     private static readonly Dictionary<string, Icon> IconCache = new();

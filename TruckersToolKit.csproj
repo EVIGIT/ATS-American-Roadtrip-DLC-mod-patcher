@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>ATS American Roadtrip Car Patcher</AssemblyName>
-    <RootNamespace>ATSRoadTripConverter</RootNamespace>
+    <RootNamespace>TruckersToolKit</RootNamespace>
     <Platforms>AnyCPU</Platforms>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>

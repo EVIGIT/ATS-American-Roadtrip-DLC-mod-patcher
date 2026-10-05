@@ -1,4 +1,4 @@
-namespace ATSRoadTripConverter;
+namespace TruckersToolKit;
 
 /// <summary>One changelog section: a version heading with the notes under it.</summary>
 public sealed record ReleaseSection(string Version, string Heading, IReadOnlyList<string> Bullets);

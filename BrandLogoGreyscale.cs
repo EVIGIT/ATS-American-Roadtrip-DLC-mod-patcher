@@ -1,4 +1,4 @@
-namespace ATSRoadTripConverter;
+namespace TruckersToolKit;
 
 /// <summary>
 /// Opt-in pass that desaturates a dealer badge, so a converted logo reads like the base game's own.

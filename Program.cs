@@ -1,9 +1,9 @@
 
-namespace ATSRoadTripConverter;
+namespace TruckersToolKit;
 
 internal static class Program
 {
-    public const string AppName = "ATS American Roadtrip Car Patcher";
+    public const string AppName = "Truckers Tool Kit";
     public const string AppVersion = "v1.4";
 
     [STAThread]

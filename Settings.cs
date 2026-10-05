@@ -1,6 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-namespace ATSRoadTripConverter;
+namespace TruckersToolKit;
 public sealed class VehicleTypeCustom
 {
     public string Name { get; set; } = "";
@@ -100,10 +100,31 @@ public sealed class AppSettings
 
 public static class SettingsManager
 {
+    /// <summary>
+    /// Where settings live. The folder name is the app's own root namespace, NOT the product name.
+    /// <para>
+    /// Renaming it on rebrand would be the obvious move and the wrong one: this is a silent data-loss
+    /// bug. Every existing install keeps its theme, font size and dealer preferences in the old
+    /// folder, a rename simply misses it, and the app starts up looking reset with no error anywhere.
+    /// So <see cref="AdoptSettingsFromPreviousFolder"/> picks the old file up once and moves it, and
+    /// the old folder is then never needed again.
+    /// </para>
+    /// </summary>
     private static readonly string SettingsPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "ATSRoadTripConverter",
+        "TruckersToolKit",
         "settings.json");
+
+    /// <summary>
+    /// Settings locations written by earlier builds, newest first. Read once, then migrated.
+    /// </summary>
+    private static readonly string[] PreviousSettingsPaths =
+    {
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "TruckersToolKit",
+            "settings.json")
+    };
 
     public static AppSettings Current { get; private set; } = new();
 
@@ -114,6 +135,8 @@ public static class SettingsManager
             var dir = Path.GetDirectoryName(SettingsPath)!;
             if (!Directory.Exists(dir))
                 Directory.CreateDirectory(dir);
+
+            AdoptSettingsFromPreviousFolder();
 
             if (File.Exists(SettingsPath))
             {
@@ -147,7 +170,7 @@ public static class SettingsManager
         // through SettingsSchema so the default is defined in exactly one place.
         Current.ThemeName = SettingsSchema.ResolveThemeName(Current.ThemeName, null);
         if (!Theme.Palettes.Any(palette => palette.Name.Equals(Current.ThemeName, StringComparison.OrdinalIgnoreCase)))
-            Current.ThemeName = "Roadtrip";
+            Current.ThemeName = "Truckers";
 
         // Ensure built-in vehicle types exist
         EnsureBuiltInVehicleTypes();
@@ -161,6 +184,38 @@ public static class SettingsManager
     {
         Current = new AppSettings();
         Save();
+    }
+
+    /// <summary>
+    /// Moves settings written by an earlier build's folder into the current one, once.
+    /// <para>
+    /// Copy rather than move, and only when the new file does not already exist. If the move fails
+    /// for any reason the old file is still there and the next launch tries again; nothing is ever
+    /// deleted here, so a failure costs a duplicate file rather than the user's preferences.
+    /// </para>
+    /// </summary>
+    private static void AdoptSettingsFromPreviousFolder()
+    {
+        if (File.Exists(SettingsPath))
+            return;
+
+        foreach (var previous in PreviousSettingsPaths)
+        {
+            if (!File.Exists(previous))
+                continue;
+
+            try
+            {
+                File.Copy(previous, SettingsPath);
+            }
+            catch
+            {
+                // Leave the old file alone; the defaults below apply this run and the next launch
+                // tries the copy again.
+            }
+
+            return;
+        }
     }
 
     public static void Save()

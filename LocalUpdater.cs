@@ -1,4 +1,4 @@
-namespace ATSRoadTripConverter;
+namespace TruckersToolKit;
 internal sealed record LocalUpdatePlan(
     string SourceDirectory,
     string TargetDirectory,

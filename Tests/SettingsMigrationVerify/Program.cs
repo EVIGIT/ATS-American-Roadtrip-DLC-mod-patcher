@@ -1,5 +1,5 @@
 using System.Text.Json;
-using ATSRoadTripConverter;
+using TruckersToolKit;
 
 var failures = new List<string>();
 
@@ -78,11 +78,11 @@ Check(
     SettingsSchema.ResolveThemeName("", "Light") == "Daylight",
     "a legacy Light preference migrates to Daylight");
 Check(
-    SettingsSchema.ResolveThemeName("", "Dark") == "Roadtrip",
-    "a legacy Dark preference migrates to Roadtrip");
+    SettingsSchema.ResolveThemeName("", "Dark") == "Truckers",
+    "a legacy Dark preference migrates to Truckers");
 Check(
-    SettingsSchema.ResolveThemeName(null, null) == "Roadtrip",
-    "an absent legacy preference defaults to Roadtrip");
+    SettingsSchema.ResolveThemeName(null, null) == "Truckers",
+    "an absent legacy preference defaults to Truckers");
 Check(
     SettingsSchema.ResolveThemeName("   ", "Light") == "Daylight",
     "a whitespace-only theme name is treated as unset");
@@ -95,6 +95,26 @@ Check(
 Check(
     SettingsSchema.ResolveThemeName("Daylight", "Dark") == "Daylight",
     "an explicit ThemeName is not overwritten by a legacy Dark preference");
+
+// --- The rebrand: an old theme name must not silently resolve to nothing ------------
+// The default dark palette was renamed "Roadtrip" -> "Truckers". A settings file still carrying the
+// old name resolves through the alias table rather than falling through to "no match", because the
+// fallback is a silent change of colour rather than an error the user could notice.
+Check(
+    SettingsSchema.ResolveThemeName("Roadtrip", null) == "Truckers",
+    "a stored 'Roadtrip' theme name migrates to Truckers instead of resetting");
+Check(
+    SettingsSchema.ResolveThemeName("roadtrip", null) == "Truckers",
+    "the theme alias is matched case-insensitively, because settings are hand-editable");
+Check(
+    SettingsSchema.ResolveThemeName("  Roadtrip  ", null) == "Truckers",
+    "the theme alias tolerates surrounding whitespace");
+Check(
+    SettingsSchema.ResolveThemeName("Roadtrip", "Light") == "Truckers",
+    "the alias wins over a legacy preference, since an explicit stored name always wins");
+Check(
+    SettingsSchema.ResolveThemeName("NoSuchTheme", null) == "NoSuchTheme",
+    "an unknown theme name is passed through untouched rather than rewritten");
 
 // --- Round trip through a real serialized document -----------------------------
 

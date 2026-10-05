@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace ATSRoadTripConverter;
+namespace TruckersToolKit;
 
 /// <summary>
 /// Versioning for the settings file.
@@ -60,14 +60,40 @@ public static class SettingsSchema
     /// every other legacy value was dark.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// Theme names an earlier build wrote, mapped to their current equivalents.
+    /// <para>
+    /// The rebrand renamed the default dark palette from "Roadtrip" to "Truckers". Without this
+    /// table a settings file still saying "Roadtrip" would resolve to nothing and the app would
+    /// silently fall back to its first palette - the user waking up to a different colour with
+    /// nothing in the log to explain it. Same failure shape as renaming the settings folder.
+    /// </para>
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string> ThemeNameAliases =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Roadtrip"] = "Truckers"
+        };
+
+    /// <summary>
+    /// Picks the theme a settings file should end up on.
+    /// <para>
+    /// An explicit theme name always wins, which is what keeps a v1 file that already stores
+    /// <c>ThemeName</c> from being dragged back to a legacy preference. Only when no name has
+    /// been chosen yet does the old <c>ThemeMode</c> decide, and only "Light" maps across -
+    /// every other legacy value was dark.
+    /// </para>
+    /// </summary>
     public static string ResolveThemeName(string? themeName, string? legacyThemeMode)
     {
         if (!string.IsNullOrWhiteSpace(themeName))
-            return themeName;
+            return ThemeNameAliases.TryGetValue(themeName.Trim(), out var renamed)
+                ? renamed
+                : themeName;
 
         return string.Equals(legacyThemeMode, "Light", StringComparison.OrdinalIgnoreCase)
             ? "Daylight"
-            : "Roadtrip";
+            : "Truckers";
     }
 
     /// <summary>

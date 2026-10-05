@@ -2,7 +2,7 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace ATSRoadTripConverter;
+namespace TruckersToolKit;
 /// <summary>Summary of the encrypted content found inside a mod.</summary>
 public sealed record EncryptedModReport(int FileCount, IReadOnlyList<string> Samples)
 {
@@ -2070,8 +2070,13 @@ public static class ModConverter
     {
         var report = new StringBuilder();
 
-        report.AppendLine("ATS American Roadtrip Car Patcher v12");
-        report.AppendLine("==========================");
+        // No version here on purpose. This header used to hard-code "v12", which was already three
+        // naming schemes out of date by the time it was written, and nothing ever noticed because a
+        // version string in a report nobody asserts on cannot go red in a test. The report is written
+        // into the converted mod's own folder, where the build that produced it is the only thing
+        // that matters, and that is recorded by the file itself.
+        report.AppendLine("Truckers Tool Kit");
+        report.AppendLine("==================");
         report.AppendLine($"Input file: {settings.InputFile}");
         report.AppendLine($"Output directory: {settings.OutputDirectory}");
         report.AppendLine($"Dealer ID: {dealerId}");

@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.IO.Compression;
 
-namespace ATSRoadTripConverter;
+namespace TruckersToolKit;
 internal sealed record GitHubReleasePackage(
     string TagName,
     string TemporaryDirectory,
@@ -9,8 +9,32 @@ internal sealed record GitHubReleasePackage(
 
 internal static class GitHubReleaseClient
 {
-    public const string Repository = "EVIGIT/ATS-American-Roadtrip-DLC-mod-patcher";
-    public const string WindowsReleaseAsset = "ATS-American-Roadtrip-Car-Patcher-win-x64.zip";
+    public const string Repository = "EVIGIT/Truckers-Tool-Kit";
+
+    /// <summary>
+    /// The asset name new releases publish under.
+    /// </summary>
+    public const string WindowsReleaseAsset = "TruckersToolKit-win-x64.zip";
+
+    /// <summary>
+    /// Asset names published by earlier releases, still accepted.
+    /// <para>
+    /// The rebrand changed the asset name, but a user running an older build downloads the
+    /// <em>new</em> release with <em>their</em> older copy of this code. Without this list, every
+    /// update from a pre-rebrand build would fail with "did not contain TruckersToolKit-win-x64.zip"
+    /// even though the asset was sitting in the release the whole time. The rename is therefore only
+    /// safe if the old names stay readable, and they stay here until no supported build predates the
+    /// rebrand.
+    /// </para>
+    /// </summary>
+    public static readonly string[] LegacyWindowsReleaseAssets =
+    {
+        "ATS-American-Roadtrip-Car-Patcher-win-x64.zip"
+    };
+
+    /// <summary>Every asset name this build can install from, newest first.</summary>
+    public static IEnumerable<string> KnownWindowsReleaseAssets =>
+        new[] { WindowsReleaseAsset }.Concat(LegacyWindowsReleaseAssets);
 
     public static string? TryLoadChangelog()
     {
@@ -80,16 +104,28 @@ internal static class GitHubReleaseClient
 
         try
         {
-            RunGh(TimeSpan.FromMinutes(3),
-                "release", "download", latestTag,
-                "--repo", Repository,
-                "--pattern", WindowsReleaseAsset,
-                "--dir", downloadDirectory,
-                "--clobber");
+            // Download every asset name this build understands, then take whichever actually landed.
+            // Asking for one exact name is what breaks the first update after a rename: the running
+            // build is the old code, so it does not know the new name, and the release it is trying
+            // to fetch does not have the old one.
+            foreach (var candidate in KnownWindowsReleaseAssets)
+            {
+                RunGh(TimeSpan.FromMinutes(3),
+                    "release", "download", latestTag,
+                    "--repo", Repository,
+                    "--pattern", candidate,
+                    "--dir", downloadDirectory,
+                    "--clobber");
+            }
 
-            var archivePath = Path.Combine(downloadDirectory, WindowsReleaseAsset);
-            if (!File.Exists(archivePath))
-                throw new InvalidOperationException($"Release {latestTag} did not contain {WindowsReleaseAsset}.");
+            var archivePath = KnownWindowsReleaseAssets
+                .Select(name => Path.Combine(downloadDirectory, name))
+                .FirstOrDefault(File.Exists);
+
+            if (archivePath == null)
+                throw new InvalidOperationException(
+                    $"Release {latestTag} contained none of the expected assets " +
+                    $"({string.Join(", ", KnownWindowsReleaseAssets)}).");
 
             ZipFile.ExtractToDirectory(archivePath, extractDirectory);
             var executablePath = Directory

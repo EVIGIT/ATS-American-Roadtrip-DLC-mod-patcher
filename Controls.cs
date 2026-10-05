@@ -1,5 +1,5 @@
 using System.Drawing.Drawing2D;
-namespace ATSRoadTripConverter;
+namespace TruckersToolKit;
 internal sealed class ThemeSwatch : Control
 {
     private bool _selected;

@@ -1,5 +1,5 @@
 using System.Drawing.Drawing2D;
-namespace ATSRoadTripConverter;
+namespace TruckersToolKit;
 internal sealed record ThemePalette(
     string Name,
     Color Background,
@@ -14,7 +14,7 @@ internal static class Theme
 {
     public static IReadOnlyList<ThemePalette> Palettes { get; } = Array.AsReadOnly(new[]
     {
-        new ThemePalette("Roadtrip", Color.FromArgb(13, 16, 21), Color.FromArgb(20, 25, 34), Color.FromArgb(27, 33, 44), Color.FromArgb(38, 46, 60), Color.FromArgb(233, 237, 244), Color.FromArgb(139, 149, 167), Color.FromArgb(255, 138, 61)),
+        new ThemePalette("Truckers", Color.FromArgb(13, 16, 21), Color.FromArgb(20, 25, 34), Color.FromArgb(27, 33, 44), Color.FromArgb(38, 46, 60), Color.FromArgb(233, 237, 244), Color.FromArgb(139, 149, 167), Color.FromArgb(255, 138, 61)),
         new ThemePalette("Daylight", Color.FromArgb(245, 247, 250), Color.FromArgb(255, 255, 255), Color.FromArgb(238, 241, 246), Color.FromArgb(222, 228, 237), Color.FromArgb(16, 21, 28), Color.FromArgb(92, 103, 120), Color.FromArgb(37, 99, 235)),
         new ThemePalette("Steel", Color.FromArgb(17, 19, 23), Color.FromArgb(24, 27, 32), Color.FromArgb(32, 36, 43), Color.FromArgb(44, 49, 58), Color.FromArgb(232, 236, 240), Color.FromArgb(146, 155, 167), Color.FromArgb(158, 190, 219)),
         new ThemePalette("Ember", Color.FromArgb(23, 15, 16), Color.FromArgb(31, 21, 23), Color.FromArgb(42, 28, 30), Color.FromArgb(57, 38, 41), Color.FromArgb(244, 233, 231), Color.FromArgb(166, 144, 142), Color.FromArgb(255, 107, 87)),

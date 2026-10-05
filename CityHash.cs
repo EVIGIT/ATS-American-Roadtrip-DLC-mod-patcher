@@ -38,7 +38,7 @@
 
 using System;
 
-namespace ATSRoadTripConverter
+namespace TruckersToolKit
 {
     /// <summary>
     /// Google's <see href="https://opensource.googleblog.com/2011/04/introducing-cityhash.html">CityHash</see>

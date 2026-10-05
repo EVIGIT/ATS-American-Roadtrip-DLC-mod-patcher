@@ -1,6 +1,6 @@
 ﻿using System.Reflection;
 
-namespace ATSRoadTripConverter;
+namespace TruckersToolKit;
 
 /// <summary>
 /// The window shown before the converter. It replaces the old GitHub sign-in window, which

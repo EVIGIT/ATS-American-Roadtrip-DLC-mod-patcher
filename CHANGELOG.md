@@ -1,4 +1,4 @@
-# ATS American Roadtrip Car Patcher
+# Truckers Tool Kit
 
 Current App Version: v1.4
 
@@ -49,6 +49,53 @@ Current App Version: v1.4
 - **The badge work and the texture repair are both confirmed by the maintainer**, after a full ATS restart. Converted cars render with their own textures, and the dealership badge is correct. That closes the last thing this release was waiting on: the crop and both opt-in passes had only ever been verified against the real badge files offline, and the texture fix against the archives and the game's own error log rather than on screen.
 
 ## Unreleased (v1.4.1)
+
+> **This release enables patch mode; it does not contain the fix.** The `invalid_vehicle` fix below is
+> already in **v1.4**, shipped dormant behind a setting that is off by default. Nothing here can affect
+> anyone who leaves the default alone, which is what let v1.4 go out on badge and texture verification
+> alone rather than waiting on the patcher.
+>
+> So this section is not a list of changes to the code — it is the verification that has to happen
+> before the default flips, plus the flip itself. **Patch mode stays off by default until a converted
+> car has been loaded from a save in game**, because that is the only test that distinguishes "the
+> patch writes correct bytes" from "the patch loads without breaking the save". Everything so far
+> proves the former.
+
+> **The app is now Truckers Tool Kit.** It was "ATS American Roadtrip Car Patcher". The rename is in
+> the tree after the v1.4 tag, so v1.4 itself keeps its original name — a tagged release is not
+> rewritten after the fact. Three things were deliberately *not* renamed, because renaming them would
+> have broken working installs rather than branding anything:
+>
+> - **The executable and assembly name** (`ATS American Roadtrip Car Patcher.exe`). The updater
+>   downloads a release and looks for the *running* build's executable inside it. Rename the exe and
+>   every update from a pre-rename build fails on "the release package did not contain ...".
+> - **The output filenames** `<mod>_roadtrip.scs` and `<mod>_roadtrip_patch.scs`. These are what
+>   users actually install, and `roadtrip` here is ATS's own car-mode name, not the product's.
+> - **"Road Trip" throughout the UI** ("Patch for Road Trip", the launch-page step, the
+>   `(Road Trip patch)` entry in generated `.sii` files). That is the game's mode, not this tool.
+
+### Changed
+- **Renamed to Truckers Tool Kit** across the app name, window titles, About tab, conversion report
+  header, CLI, repository slug and description, README, and the C# namespace (`ATSRoadTripConverter` →
+  `TruckersToolKit`, including the solution, project and workspace files).
+- **Three silent-reset traps the rename would otherwise have sprung**, each fixed rather than shipped:
+  - **Settings folder.** `%AppData%\ATSRoadTripConverter` → `%AppData%\TruckersToolKit`. Renaming
+    without care loses every user's theme, font size and dealer preferences, and the app starts up
+    looking reset with nothing in the log to explain it. The old file is now adopted once on first run.
+  - **Default theme name.** The dark palette "Roadtrip" is now "Truckers". A settings file still
+    holding the old name resolves through an alias table instead of falling through to "no match",
+    which would have quietly changed the user's colours. Case-insensitive, whitespace-tolerant, and
+    asserted.
+  - **Release asset name.** `ATS-American-Roadtrip-Car-Patcher-win-x64.zip` →
+    `TruckersToolKit-win-x64.zip`. This is the one that would have looked like a network fault: a
+    user on a pre-rename build downloads the *new* release with *their* older code, which asks only
+    for the old filename. Old names stay in `LegacyWindowsReleaseAssets` and every known name is
+    tried, so the first update after a rename still works.
+- The conversion report header no longer hard-codes a version. It read `v12`, which was three naming
+  schemes out of date by the time it was written and nothing noticed, because a version string in a
+  report nobody asserts on cannot go red in a test.
+
+### Changed (previously)
 
 > **This release enables patch mode; it does not contain the fix.** The `invalid_vehicle` fix below is
 > already in **v1.4**, shipped dormant behind a setting that is off by default. Nothing here can affect

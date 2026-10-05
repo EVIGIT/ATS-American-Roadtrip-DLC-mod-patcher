@@ -1,4 +1,4 @@
-namespace ATSRoadTripConverter;
+namespace TruckersToolKit;
 internal sealed class ThemedConfirmForm : Form
 {
     public ThemedConfirmForm(string title, string message, string acceptText, string cancelText)

@@ -1,4 +1,4 @@
-namespace ATSRoadTripConverter;
+namespace TruckersToolKit;
 
 /// <summary>
 /// Trims the empty margin off a dealer badge and re-pads it to the shape the car shop expects, so a

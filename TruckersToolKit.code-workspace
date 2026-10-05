@@ -5,6 +5,6 @@
     }
   ],
   "settings": {
-    "dotnet.defaultSolution": "ATSRoadTripConverter.sln"
+    "dotnet.defaultSolution": "TruckersToolKit.sln"
   }
 }

@@ -1,13 +1,13 @@
 <div align="center">
 
-<img src="Assets/logo.png" alt="ATS American Roadtrip Car Patcher" width="220">
+<img src="Assets/logo.png" alt="Truckers Tool Kit" width="220">
 
-# ATS American Roadtrip Car Patcher
+# Truckers Tool Kit
 
 **Turn an American Truck Simulator truck mod into a Road Trip car — drivable, and sold through
 the in-game car dealership.**
 
-[![Release](https://img.shields.io/github/v/release/EVIGIT/ATS-American-Roadtrip-DLC-mod-patcher?display_name=tag&sort=semver&color=ff8a3d)](https://github.com/EVIGIT/ATS-American-Roadtrip-DLC-mod-patcher/releases/latest)
+[![Release](https://img.shields.io/github/v/release/EVIGIT/Truckers-Tool-Kit?display_name=tag&sort=semver&color=ff8a3d)](https://github.com/EVIGIT/Truckers-Tool-Kit/releases/latest)
 [![.NET](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/download/dotnet/8.0)
 [![Windows](https://img.shields.io/badge/Windows-0078D4?logo=windows&logoColor=white)](https://learn.microsoft.com/windows/win32/winforms/)
 [![License](https://img.shields.io/badge/license-GPL--3.0-8B5A2B)](LICENSE)
@@ -88,7 +88,7 @@ rather than assumed — see [How it works](#how-it-works).
 ## Quick start
 
 1. **Download and run.** Grab the latest `ATS-American-Roadtrip-Car-Patcher-win-x64.zip` from
-   [Releases](https://github.com/EVIGIT/ATS-American-Roadtrip-DLC-mod-patcher/releases/latest)
+   [Releases](https://github.com/EVIGIT/Truckers-Tool-Kit/releases/latest)
    and extract it anywhere. There is no installer; run the `.exe`.
 2. **Pick your mod.** On the input row, browse to a truck mod `.scs` (or `.zip`). *Recent*
    reopens the folder you used last time.
@@ -205,7 +205,7 @@ macOS.
 ## Downloading a release
 
 Grab `ATS-American-Roadtrip-Car-Patcher-win-x64.zip` from the
-[releases page](https://github.com/EVIGIT/ATS-American-Roadtrip-DLC-mod-patcher/releases/latest),
+[releases page](https://github.com/EVIGIT/Truckers-Tool-Kit/releases/latest),
 extract it, and run the `.exe`. No installer, no registry entries.
 
 The app can also update itself in place from **Settings → Advanced → Install latest GitHub
@@ -215,7 +215,7 @@ release**. It uses your existing `gh auth login` session and never stores a toke
 
 ## Building and testing
 
-    dotnet build ATSRoadTripConverter.sln -c Release -p:TreatWarningsAsErrors=true --no-incremental
+    dotnet build TruckersToolKit.sln -c Release -p:TreatWarningsAsErrors=true --no-incremental
 
 `--no-incremental` matters: an ordinary incremental build reports "0 warnings" simply because
 nothing recompiled. Use it whenever you want a real signal.
@@ -308,9 +308,9 @@ setup remains the safest source — which is why the tool accepts one.
 
 ## Development notes
 
-- Open `ATSRoadTripConverter.code-workspace` in VS Code. Do not open a single source file, or a
+- Open `TruckersToolKit.code-workspace` in VS Code. Do not open a single source file, or a
   parent folder that merely contains this project.
-- **Terminal → Run Task → Hot Reload and run ATSRoadTripConverter** starts the app under
+- **Terminal → Run Task → Hot Reload and run TruckersToolKit** starts the app under
   `dotnet watch`. Only the app launched by the watcher can receive hot edits.
 - The app shells out to your local `gh auth login` session to read the remote changelog and to
   check and download releases. It never stores a GitHub token. Without GitHub CLI installed it
@@ -408,4 +408,4 @@ of SCS Software; this repository contains no game assets.
 - [ROADMAP.md](ROADMAP.md) — what is planned for v1.4 and the releases after it, including the
   known issues
   this release leaves open and why they were left.
-- [Releases](https://github.com/EVIGIT/ATS-American-Roadtrip-DLC-mod-patcher/releases) — downloads.
+- [Releases](https://github.com/EVIGIT/Truckers-Tool-Kit/releases) — downloads.

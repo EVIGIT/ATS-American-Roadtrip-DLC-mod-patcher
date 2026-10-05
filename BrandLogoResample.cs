@@ -1,4 +1,4 @@
-namespace ATSRoadTripConverter;
+namespace TruckersToolKit;
 
 /// <summary>
 /// Opt-in correction for artwork that is itself pre-squashed, so that a roundel drawn at 2.59:1 stops
