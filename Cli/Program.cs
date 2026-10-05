@@ -11,7 +11,7 @@ for (var i = 0; i < args.Length; i++)
 
     var name = arg[2..];
     if (name is "no-move-assets" or "no-dealer" or "defs-only" or "patch-only" or "keep-cameras"
-        or "custom-dealer" or "no-logo" or "help")
+        or "custom-dealer" or "no-logo" or "resample-logos" or "greyscale-logos" or "help")
     {
         flags.Add(name);
         continue;
@@ -57,7 +57,11 @@ var settings = new ConversionSettings(
     !flags.Contains("keep-cameras"),
     NamespaceAnonymousUnits: true,
     UseSourceBrandToken: !flags.Contains("custom-dealer"),
-    RenameBrandLogo: !flags.Contains("no-logo"));
+    RenameBrandLogo: !flags.Contains("no-logo"),
+    // Opt-in and off unless asked for, because both re-encode the artwork's colour and so give up the
+    // byte-for-byte guarantee the rest of the badge pipeline keeps.
+    ResampleSquashedLogos: flags.Contains("resample-logos"),
+    GreyscaleLogos: flags.Contains("greyscale-logos"));
 
 ConversionResult result;
 try
@@ -97,6 +101,13 @@ static int Usage(string? error)
           Dealer branding (default, recommended): the mod keeps its own brand and therefore
           its own dealership logo. --custom-dealer instead renames the dealer to --dealer <id>;
           the mod's logo is then copied to that name too, unless --no-logo is given.
+
+          Optional badge repairs, both OFF by default because each re-encodes the artwork's colour and
+          so gives up the byte-for-byte guarantee the rest of the pipeline keeps:
+            --resample-logos  un-squashes artwork that is itself flattened (the BMW roundel is 2.59:1 in
+                              the artist's own pixels, which no amount of canvas trimming can fix).
+            --greyscale-logos desaturates the badge to match the base game's monochrome badges.
+
           ats-roadtrip-convert --extract <archive.scs> --output <folder> [--defs-only]
         """);
     return error == null ? 0 : 1;

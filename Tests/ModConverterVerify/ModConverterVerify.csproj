@@ -8,6 +8,10 @@
   <ItemGroup>
     <Compile Include="../../ModConverter.cs" Link="ModConverter.cs" />
     <Compile Include="../../BrandLogoAlpha.cs" Link="BrandLogoAlpha.cs" />
+    <Compile Include="../../BrandLogoCrop.cs" Link="BrandLogoCrop.cs" />
+    <Compile Include="../../BrandLogoResample.cs" Link="BrandLogoResample.cs" />
+    <Compile Include="../../BrandLogoGreyscale.cs" Link="BrandLogoGreyscale.cs" />
+    <Compile Include="../../AssetPathRewrite.cs" Link="AssetPathRewrite.cs" />
     <Compile Include="../../ScsArchive.cs" Link="ScsArchive.cs" />
     <Compile Include="../../HashFsArchive.cs" Link="HashFsArchive.cs" />
     <Compile Include="../../CityHash.cs" Link="CityHash.cs" />

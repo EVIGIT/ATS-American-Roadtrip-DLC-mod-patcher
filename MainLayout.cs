@@ -21,7 +21,17 @@ public static class MainLayout
 
     public const int HeaderHeight = 100;
     public const int FilesCardHeight = 222;
-    public const int OptionsCardHeight = 416;
+
+    /// <summary>
+    /// Height of the options card at the default row height.
+    /// <para>
+    /// 416 when there were four rows (156 + 4x62 + 12). It is 478 now because a fifth row is placed;
+    /// see <see cref="ToggleRowCount"/>. The constant has to agree with
+    /// <see cref="OptionsCardHeightFor"/> at the default row height, and that agreement is asserted
+    /// rather than assumed - it is precisely the disagreement that clipped the badge toggles.
+    /// </para>
+    /// </summary>
+    public const int OptionsCardHeight = 478;
     public const int ActionAreaHeight = 86;
 
     /// <summary>Height of one options row: the full-width patch switch, or a side-by-side pair.</summary>
@@ -38,11 +48,19 @@ public static class MainLayout
     public const int FirstToggleRowY = 156;
 
     /// <summary>
-    /// Number of options rows: the full-width patch switch, then three side-by-side pairs.
+    /// Number of options rows: the full-width patch switch, then four side-by-side pairs.
+    /// <para>
     /// Rows are stacked from <see cref="FirstToggleRowY"/> at <see cref="ToggleRowHeight"/> pitch,
     /// which is why the pairs originally sat at 218, 280 and 342.
+    /// </para>
+    /// <para>
+    /// This was <b>4 while five rows were being placed</b>, which is why the two badge toggles were
+    /// unreadable and unclickable: the card was sized for four, so the fifth row was laid out below
+    /// the card's bottom edge and clipped by it. The count has to be the number of rows the layout
+    /// code actually places, and the test suite asserts the arithmetic that ties them together.
+    /// </para>
     /// </summary>
-    public const int ToggleRowCount = 4;
+    public const int ToggleRowCount = 5;
 
     /// <summary>Slack left under the last options row inside the card.</summary>
     public const int OptionsCardBottomPadding = 12;

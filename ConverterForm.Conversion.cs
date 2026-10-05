@@ -71,7 +71,9 @@ public sealed partial class ConverterForm : Form
                 _mapCameras.Checked,
                 _namespaceAnonymous.Checked,
                 _useSourceBrand.Checked,
-                _renameBrandLogo.Checked);
+                _renameBrandLogo.Checked,
+                _resampleLogos.Checked,
+                _greyscaleLogos.Checked);
 
             var result = await Task.Run(() =>
                 ModConverter.Run(
@@ -150,14 +152,18 @@ public sealed partial class ConverterForm : Form
     /// </summary>
     private bool ConfirmPatchModeKnownBug()
     {
-        Write("[WARNING] Patch mode has a known bug: it can stop American Truck Simulator from " +
-              "loading saves that have used this car.");
+        // The bug this warned about is fixed, so the dialog no longer says "known bug" - that would be
+        // a false statement about the current build. What remains true is that patch mode has never been
+        // verified by loading a save in game, and that it covers less than full conversion. Both are
+        // stated instead of the stale warning.
+        Write("[WARNING] Patch mode has not been verified by loading a save in game. Full conversion " +
+              "covers more of the mod and is the safer default.");
 
         using var confirm = new ThemedConfirmForm(
-            "Patch mode has a known bug",
-            "A patch writes an empty definition over the original mod's dealer entry, which can " +
-            "make ATS refuse to load saves (\"invalid_vehicle\"). This is being fixed in v1.3.9.1. " +
-            "Full conversion avoids it but may leave textures unconverted. Continue with the patch?",
+            "Patch mode is not yet in-game verified",
+            "The bug that made patches delete the original car's definition is fixed, so a patch now " +
+            "only adds the converted car. It has not yet been confirmed by loading a save in ATS, and " +
+            "it converts less than a full conversion does. Continue with the patch?",
             "Create patch anyway",
             "Use full conversion");
 

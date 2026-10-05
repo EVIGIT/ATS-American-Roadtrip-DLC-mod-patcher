@@ -13,6 +13,18 @@
          so the CLI has to compile it too. Linked rather than referenced for the same reason as
          the rest: these files are shared source, not a library. -->
     <Compile Include="..\BrandLogoAlpha.cs" Link="BrandLogoAlpha.cs" />
+    <!-- BrandLogoCrop crops the badge canvas after BrandLogoAlpha has made it transparent, so it
+         has to travel with it. Linked for the same reason as the rest. -->
+    <Compile Include="..\BrandLogoCrop.cs" Link="BrandLogoCrop.cs" />
+    <!-- The two opt-in badge passes. BrandLogoResample corrects artwork that is itself pre-squashed and
+    BrandLogoGreyscale matches the base game's monochrome badges; both re-encode colour, so both are
+    behind switches defaulted off rather than part of the normal conversion. -->
+    <Compile Include="..\BrandLogoResample.cs" Link="BrandLogoResample.cs" />
+    <Compile Include="..\BrandLogoGreyscale.cs" Link="BrandLogoGreyscale.cs" />
+    <!-- AssetPathRewrite repairs the absolute /vehicle/truck/ paths baked into a mod's own .mat and
+         .tobj files after the asset move. Without it a converted car has every texture missing, which
+         is only visible in game - so the CLI needs it exactly as much as the GUI does. -->
+    <Compile Include="..\AssetPathRewrite.cs" Link="AssetPathRewrite.cs" />
     <Compile Include="..\ScsArchive.cs" Link="ScsArchive.cs" />
     <Compile Include="..\HashFsArchive.cs" Link="HashFsArchive.cs" />
     <Compile Include="..\CityHash.cs" Link="CityHash.cs" />

@@ -127,7 +127,9 @@ public sealed record ConversionSettings(
     bool MapCamerasToCarUnits = true,
     bool NamespaceAnonymousUnits = true,
     bool UseSourceBrandToken = true,
-    bool RenameBrandLogo = true)
+    bool RenameBrandLogo = true,
+    bool ResampleSquashedLogos = false,
+    bool GreyscaleLogos = false)
 {
     public static readonly string[] VehicleTypes =
         { "sedan", "hatchback", "pickup", "van" };
@@ -163,6 +165,18 @@ public sealed class ConversionStats
     public int AnonymousUnitsNamespaced;
 
     /// <summary>
+    /// Count of badges whose artwork was resampled because it was itself pre-squashed.
+    /// <para>
+    /// Only ever non-zero when <see cref="ConversionSettings.ResampleSquashedLogos"/> is on, because
+    /// this is the one badge pass that re-encodes colour and so gives up the byte-for-byte guarantee.
+    /// </para>
+    /// </summary>
+    public int BrandLogosResampled;
+
+    /// <summary>Count of badges desaturated to match the base game's monochrome badges.</summary>
+    public int BrandLogosGreyscaled;
+
+    /// <summary>
     /// Count of <c>brand_logo</c> .mat files that existed but were empty or zero-filled.
     /// These are unusable placeholders, so this is a count of things the user needs to be told
     /// about rather than something the converter can fix on its own.
@@ -181,6 +195,12 @@ public sealed class ConversionStats
     public int BrandLogosMadeTransparent;
 
     /// <summary>
+    /// Badge textures whose empty margin was trimmed and re-padded to the car shop's proportions,
+    /// so they draw at the same size as the base game's own badges.
+    /// </summary>
+    public int BrandLogosCropped;
+
+    /// <summary>
     /// The brand the mod shipped with, as read from <c>def/vehicle/truck_dealer/&lt;brand&gt;</c>.
     /// Empty when the mod carried no truck dealer at all. This is the token the game's own
     /// <c>material/ui/brand_logo/&lt;brand&gt;.mat</c> is named after.
@@ -189,6 +209,15 @@ public sealed class ConversionStats
 
     /// <summary>Distinct unit names that were namespaced, for the report.</summary>
     public HashSet<string> AnonymousUnitNames { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Files whose baked-in absolute asset path was repaired after the truck-to-car asset move.
+    /// <para>
+    /// Non-zero on any mod that ships its own materials or compiled textures, which is nearly all of
+    /// them. It is the count that was silently zero while every texture failed to load in game.
+    /// </para>
+    /// </summary>
+    public int AssetPathsRewritten;
 }
 
 public static class ModConverter
@@ -235,6 +264,13 @@ public static class ModConverter
             {
                 log("[WARNING] Dealer ID contained no usable letters/numbers; using 'custom'.");
             }
+
+            // Both branding options default on and are not independent. Converting the same input
+            // twice under two different brand tokens ships two car_brand_logo files that each
+            // override a different base-game brand, which is almost never intended. The check is
+            // deliberately a warning rather than a refusal: two conversions under two brands can be
+            // exactly what someone wants, and stopping would be the wrong call.
+            WarnIfAlreadyConvertedUnderAnotherBrand(settings, dealerId, log);
 
             RemoveLegacyTruckSourceFiles(root, log);
 
@@ -308,9 +344,31 @@ public static class ModConverter
 
             progress(25);
 
+            // Captured BEFORE the move: afterwards the files are under vehicle/car and there is no way
+            // left to tell a reference to this mod's own file from one to a base-game file that merely
+            // shares the /vehicle/truck/ prefix. Only the former may be rewritten.
+            var movedAssetPaths = moveAssets
+                ? AssetPathRewrite.CaptureMovedPaths(root)
+                : new HashSet<string>(StringComparer.Ordinal);
+
             if (moveAssets)
             {
                 MoveVehicleAssetsToCar(root, log, stats);
+            }
+
+            // The asset move relocates the files on disk, but a mod's own materials and compiled
+            // textures hold ABSOLUTE /vehicle/truck/... paths pointing straight at them. Rewriting
+            // the .sii definitions does nothing for those, so without this pass the car loads with
+            // every texture missing and is drawn in the engine's fallback material. Proven against a
+            // real conversion and the ATS log from the session that hit it: 0 entries left under
+            // vehicle/truck, 96 files still referencing it, 88 "Failed to init update" errors in game.
+            //
+            // Runs only when the assets were actually moved. In patch mode the ORIGINAL mod keeps
+            // its vehicle/truck tree and stays mounted, so those paths still resolve there and
+            // rewriting them would be wrong.
+            if (moveAssets)
+            {
+                stats.AssetPathsRewritten += AssetPathRewrite.RewriteTree(root, movedAssetPaths, log).Count;
             }
 
             progress(35);
@@ -357,8 +415,10 @@ public static class ModConverter
             log("-> Assigning the converted car to the selected dealer...");
             AssignDealerBrand(root, dealerId, migratedTruckFolders, stats, log);
 
-            CopyBrandLogoForDealer(root, sourceToken, dealerId, settings.RenameBrandLogo, stats, log);
-            EnsureCarBrandLogo(root, sourceToken, dealerId, settings.RenameBrandLogo, stats, log);
+            CopyBrandLogoForDealer(root, sourceToken, dealerId, settings.RenameBrandLogo, stats, log,
+                settings.ResampleSquashedLogos, settings.GreyscaleLogos);
+            EnsureCarBrandLogo(root, sourceToken, dealerId, settings.RenameBrandLogo, stats, log,
+                settings.ResampleSquashedLogos, settings.GreyscaleLogos);
             stats.SourceBrandToken = sourceToken ?? "";
 
             if (stats.CarsBrandscoped == 0)
@@ -411,6 +471,12 @@ public static class ModConverter
 
             var outputFile = GetOutputFile(settings);
 
+            // The output folder has to exist before the archive is written into it. Full conversion
+            // happened to get away with this because the GUI always pre-creates it, but a patch run
+            // into a fresh folder threw DirectoryNotFoundException from ZipFile.CreateFromDirectory -
+            // i.e. the only way to reach patch mode at all was to already have the output folder.
+            Directory.CreateDirectory(settings.OutputDirectory);
+
             if (File.Exists(outputFile))
                 File.Delete(outputFile);
 
@@ -418,7 +484,7 @@ public static class ModConverter
             if (settings.PatchOnly)
             {
                 packRoot = Path.Combine(work, "__patch");
-                BuildPatch(root, packRoot, originalTruckDealerFiles, Path.GetFileNameWithoutExtension(settings.InputFile), log);
+                BuildPatch(root, packRoot, Path.GetFileNameWithoutExtension(settings.InputFile), log);
             }
 
             log(settings.PatchOnly
@@ -447,6 +513,120 @@ public static class ModConverter
     }
 
     /// <summary>
+    /// Warns when the same input has already been converted into the output folder under a
+    /// <b>different</b> brand token.
+    /// <para>
+    /// The two dealer-branding options are both on by default and are not independent: "keep the
+    /// mod's own brand" and the typed Dealer ID are alternatives, not a pair. Converting one mod
+    /// twice under two tokens therefore produces two archives, each shipping its own
+    /// <c>material/ui/car_brand_logo/&lt;token&gt;.*</c>. The game resolves a dealer badge by file
+    /// name, so both load and each one silently replaces a different base game's badge - usually not
+    /// the one that was meant.
+    /// </para>
+    /// <para>
+    /// Detection is by reading the brand token back out of the <c>car_dealer</c> folder the previous
+    /// archive declares, rather than by remembering conversions in settings. Settings are per-user and
+    /// get cleared; the archive in the output folder is the artefact that actually proves a conversion
+    /// happened, and it is what would really conflict.
+    /// </para>
+    /// <para>
+    /// A warning and never a refusal. Two brands can be deliberate, and the cost of being wrong in the
+    /// blocking direction - silently refusing a conversion someone wanted - is much higher than the
+    /// cost of an extra warning line.
+    /// </para>
+    /// </summary>
+    private static void WarnIfAlreadyConvertedUnderAnotherBrand(
+        ConversionSettings settings,
+        string dealerId,
+        Action<string> log)
+    {
+        if (string.IsNullOrWhiteSpace(settings.OutputDirectory) ||
+            !Directory.Exists(settings.OutputDirectory))
+            return;
+
+        var baseName = Path.GetFileNameWithoutExtension(settings.InputFile);
+        if (string.IsNullOrWhiteSpace(baseName))
+            return;
+
+        foreach (var existing in Directory.EnumerateFiles(settings.OutputDirectory, "*.scs"))
+        {
+            // Only this mod's own previous output, not somebody else's archive in the same folder.
+            var name = Path.GetFileNameWithoutExtension(existing);
+            if (!name.StartsWith(baseName, StringComparison.OrdinalIgnoreCase) ||
+                !name.EndsWith("_roadtrip", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var previous = ReadBrandTokens(existing);
+            if (previous.Count == 0)
+                continue;
+
+            foreach (var token in previous)
+            {
+                // Same token: this is a re-run, which is the normal case and worth nothing.
+                if (token.Equals(dealerId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                log($"[WARNING] '{baseName}' was already converted in this folder under brand " +
+                    $"'{token}', and this run uses '{dealerId}'.");
+                log($"          Both archives will be installed, and each one's " +
+                    $"material/ui/car_brand_logo/{token}.* overrides a different base-game badge.");
+                log("          If that was not intended, delete the older archive or convert into a " +
+                    "different output folder.");
+                return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Reads the distinct brand tokens a converted archive declares, taken from its
+    /// <c>def/vehicle/car_dealer/</c> folder names.
+    /// <para>
+    /// That folder is the ground truth for which dealer a car is listed under: the assignment is done
+    /// by renaming the car's unit to <c>vehicle.&lt;brand&gt;.&lt;model&gt;</c> and writing the dealer
+    /// definition beneath the matching <c>car_dealer/&lt;brand&gt;/</c>, so the folder name and the badge
+    /// token are the same string by construction.
+    /// </para>
+    /// <para>
+    /// Returns an empty list rather than throwing on anything unreadable. A warning that cannot be
+    /// produced must not be the reason a conversion fails.
+    /// </para>
+    /// </summary>
+    internal static IReadOnlyList<string> ReadBrandTokens(string archivePath)
+    {
+        const string dealerPrefix = "def/vehicle/car_dealer/";
+        var tokens = new List<string>();
+
+        try
+        {
+            using var archive = ZipFile.OpenRead(archivePath);
+
+            foreach (var entry in archive.Entries)
+            {
+                var name = entry.FullName.Replace('\\', '/');
+                if (!name.StartsWith(dealerPrefix, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var rest = name[dealerPrefix.Length..];
+                if (rest.Length == 0)
+                    continue;
+
+                var token = rest.Split('/')[0];
+                if (token.Length == 0)
+                    continue;
+
+                if (!tokens.Contains(token, StringComparer.OrdinalIgnoreCase))
+                    tokens.Add(token);
+            }
+        }
+        catch
+        {
+            // Unreadable, locked or not an archive at all. Nothing to report.
+        }
+
+        return tokens;
+    }
+
+    /// <summary>
     /// Builds a definitions-only mod meant to be loaded above the untouched original.
     /// Models, textures and sounds are copied to the patch with converted paths, and the
     /// original truck dealer entries are overridden with empty units.
@@ -454,7 +634,6 @@ public static class ModConverter
     private static void BuildPatch(
         string root,
         string patchRoot,
-        IReadOnlyList<string> originalTruckDealerFiles,
         string displayName,
         Action<string> log)
     {
@@ -504,15 +683,24 @@ public static class ModConverter
             }
         }
 
-        foreach (var relative in originalTruckDealerFiles)
-        {
-            var target = Path.Combine(patchRoot, relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.WriteAllText(target, "SiiNunit\n{\n}\n", new UTF8Encoding(false));
-            log($"[PATCH] Emptied original truck dealer entry {relative.Replace('\\', '/')}");
-        }
+        // NOTE: this used to write a 13-byte `SiiNunit\n{\n}\n` stub over every one of the original
+    // mod's def/vehicle/truck_dealer/<brand>/*.sii files. Proven against the real patch output: 13 bytes
+    // replacing 2,343 bytes that defined ~20 units - the car's whole accessory list (chassis, cabin,
+    // engine, transmission, wheels, paint, mirrors, steering_w).
+    //
+    // That is not "neutralising" a definition, it is deleting one. SCS unit names are global and a later
+    // mod's definition of the same name REPLACES the earlier one, so the patch shipped an empty file at
+    // the original's path, the car stopped existing as far as the engine was concerned, and every save
+    // that had driven it failed to load with `invalid_vehicle`. The stub was intended to stop the car
+    // appearing in the TRUCK dealer as well as the new CAR dealer, but deleting the definition achieves
+    // that by breaking the car entirely.
+    //
+    // The correct behaviour for a definitions-only patch is to add to the original mod and never modify
+    // it. The car is already re-registered under def/vehicle/car_dealer/<brand>/ by
+    // ConvertExistingDealers, which is what puts it in the dealership; the truck_dealer entry is left
+    // alone and simply remains the truck-era listing it always was.
 
-        foreach (var name in new[] { "manifest.sii", "roadtrip_conversion_report.txt" })
+    foreach (var name in new[] { "manifest.sii", "roadtrip_conversion_report.txt" })
         {
             var source = Path.Combine(root, name);
             if (File.Exists(source))
@@ -1339,7 +1527,9 @@ public static class ModConverter
         string dealerId,
         bool enabled,
         ConversionStats stats,
-        Action<string> log)
+        Action<string> log,
+        bool resampleSquashedLogos = false,
+        bool greyscaleLogos = false)
     {
         if (sourceToken == null)
             return;
@@ -1402,7 +1592,7 @@ public static class ModConverter
             // Either there was nothing to copy, or every file was already in place because the mod
             // already shipped car_brand_logo. The transparency pass still has to run in that case:
             // a pre-existing car-shop logo is exactly the opaque DXT1 case it exists to fix.
-            MakeLogoBackgroundsTransparent(root, stats, log);
+            MakeLogoBackgroundsTransparent(root, stats, log, resampleSquashedLogos, greyscaleLogos);
             return;
         }
 
@@ -1415,7 +1605,7 @@ public static class ModConverter
         // around the artwork. Both folders are fixed because both are reachable: the .tobj holds
         // an absolute path back into brand_logo/, so leaving the truck copy opaque would keep the
         // box even after the car-shop copy was corrected.
-        MakeLogoBackgroundsTransparent(root, stats, log);
+        MakeLogoBackgroundsTransparent(root, stats, log, resampleSquashedLogos, greyscaleLogos);
     }
 
     /// <summary>
@@ -1426,7 +1616,9 @@ public static class ModConverter
     /// channel is never re-encoded at all. See <see cref="BrandLogoAlpha"/>.
     /// </para>
     /// </summary>
-    private static void MakeLogoBackgroundsTransparent(string root, ConversionStats stats, Action<string> log)
+    private static void MakeLogoBackgroundsTransparent(
+        string root, ConversionStats stats, Action<string> log,
+        bool resampleSquashedLogos = false, bool greyscaleLogos = false)
     {
         foreach (var folder in new[] { TruckBrandLogoFolder, CarBrandLogoFolder })
         {
@@ -1453,6 +1645,61 @@ public static class ModConverter
                 else
                 {
                     log($"[INFO] Left {folder}/{Path.GetFileName(texture)} alone: it {detail}.");
+                }
+
+                // ORDER MATTERS, and getting it wrong is what crashed the game.
+                //
+                // The unsquash runs BEFORE the crop. It corrects the artwork's own proportions, and the
+                // crop's job is then to give that corrected artwork the stock canvas shape. Run the other
+                // way round, the unsquash discarded the crop's measured canvas and replaced it with a bare
+                // square, so the badge reached the game as neither the stock 1.97:1 shape nor anything the
+                // crop had verified - a 127x127 image that was not even a whole number of 4x4 blocks.
+                //
+                // Both still need the background to be transparent first, so the transparency pass stays
+                // where it is.
+                if (resampleSquashedLogos)
+                {
+                    var didResample = BrandLogoResample.TryUnsquash(texture, out var resampleDetail);
+
+                    // The pass's own detail already says the badge is no longer byte-identical, so the caller's line adds
+            // only what it is doing and why - not a second copy of the same warning.
+                    if (didResample)
+                    {
+                        stats.BrandLogosResampled++;
+                        log($"[LOGO] {folder}/{Path.GetFileName(texture)}: {resampleDetail}.");
+                    }
+                    else if (!resampleDetail.Contains("left unchanged", StringComparison.Ordinal)
+                             && !resampleDetail.StartsWith("already", StringComparison.Ordinal)
+                             && !resampleDetail.Contains("too little", StringComparison.Ordinal)
+                             && !resampleDetail.Contains("not a format", StringComparison.Ordinal)
+                             && !resampleDetail.Contains("no visible", StringComparison.Ordinal))
+                    {
+                        log($"[INFO] {folder}/{Path.GetFileName(texture)} was not resampled: {resampleDetail}.");
+                    }
+                }
+
+                // Cropped after the transparency pass, because the crop measures the opaque bounding box:
+                // with the black still baked in, the bounds would be the whole canvas and there would be
+                // nothing to trim. And after the unsquash, so the corrected artwork is given the stock
+                // canvas shape rather than replacing it.
+                if (BrandLogoCrop.TryCrop(texture, out var cropDetail))
+                {
+                    stats.BrandLogosCropped++;
+                    log($"[LOGO] {folder}/{Path.GetFileName(texture)}: {cropDetail}, so the badge draws at " +
+                        "the same size as the base game's.");
+                }
+                else if (!cropDetail.StartsWith("already", StringComparison.Ordinal)
+                         && !cropDetail.Contains("left unchanged", StringComparison.Ordinal))
+                {
+                    log($"[INFO] {folder}/{Path.GetFileName(texture)} was not cropped: {cropDetail}.");
+                }
+
+                // Greyscale runs last: it only rewrites the three colour channels, so it is indifferent
+                // to canvas shape and safe at any point after the background is transparent.
+                if (greyscaleLogos && BrandLogoGreyscale.TryGreyscale(texture, out var greyDetail))
+                {
+                    stats.BrandLogosGreyscaled++;
+                    log($"[LOGO] {folder}/{Path.GetFileName(texture)}: {greyDetail}.");
                 }
             }
         }
@@ -1490,7 +1737,9 @@ public static class ModConverter
         string dealerId,
         bool enabled,
         ConversionStats stats,
-        Action<string> log)
+        Action<string> log,
+        bool resampleSquashedLogos = false,
+        bool greyscaleLogos = false)
     {
         if (sourceToken == null)
             return;
@@ -1843,6 +2092,7 @@ public static class ModConverter
         report.AppendLine($"Mod's own brand token: {(stats.SourceBrandToken.Length == 0 ? "(none)" : stats.SourceBrandToken)}");
         report.AppendLine($"Dealer logo files added: {stats.BrandLogosAdded}");
         report.AppendLine($"Dealer logo textures made transparent: {stats.BrandLogosMadeTransparent}");
+        report.AppendLine($"Dealer badge textures cropped to the stock proportions: {stats.BrandLogosCropped}");
         report.AppendLine($"Global _nameless units namespaced: {stats.AnonymousUnitsNamespaced}");
         report.AppendLine($"Validation issues: {issues.Count}");
         report.AppendLine();

@@ -46,15 +46,20 @@ public sealed partial class ConverterForm : Form
         AutoEllipsis = true
     };
 
-    // Patch mode is OFF by default as of v1.3.9. It writes a 13-byte empty unit tree over the
-    // original mod's truck_dealer entry, which overrides that definition with nothing and makes
-    // ATS refuse to load any save that has driven the car ("invalid_vehicle"). Verified in game;
-    // see the ROADMAP research note. It stays available because it is the only mode that leaves
-    // the original mod untouched, and it is the right shape once the stub is fixed in v1.3.9.1.
+    // Patch mode stays OFF by default. It used to write a 13-byte empty unit tree over the original
+    // mod's truck_dealer entry, which overrode that definition with nothing and made ATS refuse to
+    // load any save that had driven the car ("invalid_vehicle"). That was verified in game and is
+    // fixed as of v1.4 - but the fix shipped dormant behind this switch, so the default stays off
+    // until a converted car has been loaded from a save. It remains available because it is the only
+    // mode that leaves the original mod untouched.
     private readonly ToggleSwitch _patchOnly = new()
     {
-        Text = "Definitions-only patch (known bug)",
-        Description = "Leaves the original mod intact, but currently makes ATS refuse to load saves. Prefer full conversion.",
+        // The label no longer says "known bug": that bug was real and is fixed. It shipped a 13-byte empty
+        // unit tree over the original car's definition, deleting it outright. Still OFF by default and
+        // still described as not yet verified in game, which is the honest position - the fix is proven
+        // against the patch's own bytes and by regression test, not yet by loading a save in ATS.
+        Text = "Definitions-only patch (untested in game)",
+        Description = "Leaves the original mod intact and only adds the converted car. Fixed since v1.4, but not yet verified by loading a save; prefer full conversion.",
         Checked = false
     };
 
@@ -63,6 +68,27 @@ public sealed partial class ConverterForm : Form
         Text = "Move vehicle assets",
         Description = "Moves vehicle/truck models into vehicle/car (full conversion). Always copied in patch mode.",
         Checked = true
+    };
+
+    // Both OFF by default, and both are LOSSY: they re-encode colour, so they give up the
+    // byte-for-byte guarantee the transparency and crop passes keep. That guarantee is the reason a
+    // converted badge is provably the mod author's own artwork, so spending it is the user's call.
+    //
+    // The resample is the only thing that can fix a logo that is itself pre-squashed - the BMW roundel
+    // is 2.59:1 in the mod artist's pixels, which no amount of canvas trimming can change - but it does
+    // so by inventing pixels they never drew, which is why it is offered rather than applied.
+    private readonly ToggleSwitch _resampleLogos = new()
+    {
+        Text = "Un-squash squashed badges",
+        Description = "Resamples artwork that is flattened (the BMW roundel is 2.59:1). Changes the artwork, so it is no longer byte-identical.",
+        Checked = false
+    };
+
+    private readonly ToggleSwitch _greyscaleLogos = new()
+    {
+        Text = "Greyscale badges",
+        Description = "Matches the base game's monochrome badges. Desaturates the artwork, so it is no longer byte-identical.",
+        Checked = false
     };
 
     private readonly ToggleSwitch _mapCameras = new()
@@ -463,6 +489,13 @@ public sealed partial class ConverterForm : Form
         PlaceTogglePair(card, _mapCameras, _namespaceAnonymous, rowY, rowHeight);
         rowY += rowHeight;
         PlaceTogglePair(card, _useSourceBrand, _renameBrandLogo, rowY, rowHeight);
+        rowY += rowHeight;
+
+        // The two lossy badge passes, paired on one row and defaulted OFF. They sit last because they
+        // are the only options that alter artwork rather than wiring, so they are the ones a user is most
+        // likely to leave alone after reading what they cost.
+        PlaceTogglePair(card, _resampleLogos, _greyscaleLogos, rowY, rowHeight);
+        rowY += rowHeight;
 
         return y + card.Height + 16;
     }
@@ -509,6 +542,11 @@ public sealed partial class ConverterForm : Form
                      _translateDealer, _moveVehicleAssets,
                      _mapCameras, _namespaceAnonymous,
                      _useSourceBrand, _renameBrandLogo,
+                     // The two lossy badge toggles join the measurement because they are placed as a
+                     // paired row: if their descriptions were left out, this would return a height that
+                     // is too small for the row they occupy and the card would clip them at large font
+                     // sizes - the exact bug the measured row height exists to prevent.
+                     _resampleLogos, _greyscaleLogos,
                  })
         {
             var title = TextRenderer.MeasureText(graphics, toggle.Text, toggle.Font, probe, flags);

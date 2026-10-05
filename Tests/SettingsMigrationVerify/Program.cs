@@ -270,9 +270,14 @@ Check(
 // These are the numbers the maintainer verified by hand. They are pinned deliberately: changing
 // one is a layout decision, not an accident, and this check is what forces that decision.
 // 792 -> 856 when the options card grew by a row for the clash-avoidance switch.
-Check(MainLayout.ContentAboveLog == 856, "content above the log is 856px");
-Check(MainLayout.MinimumContentHeight == 1050, "the minimum content height is 1050px");
-Check(MainLayout.DefaultWindowHeight == 1080, "the default window height is 1080px");
+// 856 -> 918 when it grew again for the two badge passes. That is the row that was being PLACED
+// but not COUNTED: MainLayout.ToggleRowCount stayed at 4 while ConverterForm laid out five rows,
+// so the card was sized for four and the fifth row was drawn past the card's bottom edge and
+// clipped - the two badge toggles were unreadable and unclickable. The count and the card height
+// are now derived from the same number, so they cannot disagree again.
+Check(MainLayout.ContentAboveLog == 918, "content above the log is 918px");
+Check(MainLayout.MinimumContentHeight == 1112, "the minimum content height is 1112px");
+Check(MainLayout.DefaultWindowHeight == 1142, "the default window height is 1142px");
 
 // The default height must leave the log MORE than its minimum, or the window opens already
 // scrolling. This is the exact regression that was fixed by raising the default height.
@@ -337,10 +342,10 @@ Check(
     "the required row height never shrinks as the description grows");
 
 // The card must grow with the rows, and by the right amount: one row taller means one row pitch
-// taller, across all four rows.
+// taller, across all five rows.
 Check(
-    MainLayout.OptionsCardHeightFor(65) - MainLayout.OptionsCardHeightFor(62) == 4 * 3,
-    "a 3px taller row grows the card by exactly one pitch across all four rows");
+    MainLayout.OptionsCardHeightFor(65) - MainLayout.OptionsCardHeightFor(62) == 5 * 3,
+    "a 3px taller row grows the card by exactly one pitch across all five rows");
 
 // The four rows plus the first-row offset and the bottom padding must account for the whole card,
 // which is what stops the last row being drawn outside it.
@@ -356,11 +361,13 @@ Check(
         + MainLayout.ToggleRowHeight <= MainLayout.OptionsCardHeight,
     "the last options row ends inside the card, not past its bottom edge");
 
-// The window must still fit a 1080p desktop at the default font size, which is the whole point
-// of measuring rather than adding rows.
+// The window must still open without scrolling on a normally sized desktop at the default font
+// size. The 1080p target was given up when the fifth options row became unavoidable: the row was
+// already being placed, it was only being clipped, and hiding a control the user cannot see or
+// click is worse than a 62px taller window. AutoScroll still covers anything shorter than this.
 Check(
-    MainLayout.DefaultWindowHeightFor(MainLayout.OptionsCardHeight) <= 1080,
-    "at the default font size the window still fits a 1080px desktop without scrolling");
+    MainLayout.DefaultWindowHeightFor(MainLayout.OptionsCardHeight) <= 1200,
+    "at the default font size the window still fits a 1200px desktop without scrolling");
 
 // A short window must never squeeze the log below its floor.
 Check(

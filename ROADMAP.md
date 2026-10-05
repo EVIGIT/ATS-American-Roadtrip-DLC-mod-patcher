@@ -2,7 +2,23 @@
 
 Status: **v1.3.9.1 released** (tagged and published) on top of v1.3.9. It carries one real
 fix — the option rows no longer clip at Font Size 11 and above — plus a correction to how the
-duplication bug is recorded. **v1.4, v1.4.1, v1.4.2 and v1.4.3 are open.**
+duplication bug is recorded. **v1.4 is verified in game and ready to tag**; **v1.4.1, v1.4.2, v1.5 and
+v1.6 are open**, and they are numbered in the order they will ship rather than the order they were
+written — see the table below, because two of them have been renumbered since this line was first
+written.
+
+The maintainer's in-game check closes the last open question on v1.4: converted cars render with
+their own textures, and the dealership badge is correct. The badge crop and both opt-in passes had
+only ever been verified against the real badge files, and the texture repair against the archives
+and the game's own error log rather than on screen.
+
+| Number | Work | State |
+| --- | --- | --- |
+| **v1.4** | Badge crop, unsquash, greyscale, and the texture-path repair | **Code complete and verified in game — ready to tag** |
+| **v1.4.1** | Enable patch mode by default; the fix itself shipped dormant in v1.4 | Code complete; waiting on a save-load test |
+| v1.4.2 | Password-protected `.scs`, log-to-file + report bundle, backup/restore, accessibility | Not started |
+| v1.5 | Save editor, ETS2 and ATS (was v1.4.1) | Not started |
+| v1.6 | Settings XML schema, theme rewrite, DPI painting (was the v1.4 section) | Not started |
 
 v1.3.9 shipped the authentication removal, launch page, About tab, layout fixes, dealer branding
 and badges, the car-duplication fix, the `invalid_vehicle` fix, and the transparent-badge work.
@@ -858,7 +874,15 @@ exactly 8 and 10, right edge at 794.
 
 ---
 
-## v1.4
+## v1.6 — settings and theme rewrite (was the v1.4 section)
+
+> The badge and texture work took the v1.4 number, so this section is renumbered to **v1.6** and now
+> sits *after* the save editor rather than before it. Everything below is unchanged and still
+> sequenced XML-driven settings → theme rewrite → settings format break.
+>
+> **Sections are no longer in shipping order.** They were in planning order and renumbering made
+> that obvious, but moving them wholesale is not worth the risk of relocating the historical
+> checklists that sit between them. Use the table at the top of this file for shipping order.
 
 The release the old roadmap called **v2.0**. Renamed because the version number was the least
 interesting thing about it: the settings-file format break is a **minor** bump, and the work is
@@ -896,21 +920,27 @@ in-game testing; items 5–7 came out of it.
 
 **Added during v1.3.9, from what in-game testing exposed:**
 
-5. **Warn when one mod is converted twice under two brand tokens.** The two dealer-branding
-   options are both on by default and are *not* independent: converting one mod twice under two
-   different brand tokens writes two `brand_logo` files that override two different base-game
-   brands. Almost never intended, and the tool currently says nothing. Needs a way to notice that
-   the same input has already been converted once.
-6. **End-to-end same-brand coverage.** The checks exercise the namespace builder directly, but no
-   end-to-end conversion of two same-brand mods has been compared archive to archive for shared
-   unit names. Worth automating: convert both real Cadillacs and assert the two archives declare no
-   common `_nameless` unit. This is the check that would have caught the 12-character unit-name
-   violation as a hard failure rather than a theory, since it sweeps the real output.
-7. **A sweep asserting every unit name in a converted archive is legal.**
-   `NamespaceAnonymousUnits` now throws on an over-long namespace, so that specific path is
-   guarded, but nothing checks each component of *every* unit name in the output against the
-   12-character limit. That would catch any future source of illegal names, including ones that
-   never pass through the namespacing code.
+5. ~~**Warn when one mod is converted twice under two brand tokens.**~~ **Done in v1.4.** The two
+   dealer-branding options are both on by default and are *not* independent: converting one mod twice
+   under two different brand tokens writes two `car_brand_logo` files that override two different
+   base-game brands. Detection reads the token back out of the previous archive's
+   `def/vehicle/car_dealer/<token>/` folder rather than remembering conversions in settings — settings
+   are per-user and get cleared, and the archive is both the proof and the actual conflict. It is a
+   **warning and never a refusal**, because two brands can be deliberate and silently refusing a
+   conversion someone wanted is the worse failure.
+6. ~~**End-to-end same-brand coverage.**~~ **Done in v1.4.** Both real Cadillacs are
+   `truck_dealer/cadillac` and both declare global `_nameless` units, so the collision is a property
+   of the *pair* — no single-mod check can see it. Two same-brand mods are now converted end to end
+   and their archives compared for shared generated units. Fixtures measure `firstca_ygu0` vs
+   `secondc_mul7`, no overlap. It did not catch the 12-character violation retroactively, because that
+   limit was already enforced in the namespace builder by this point; what it guards now is the
+   regression.
+7. ~~**A sweep asserting every unit name in a converted archive is legal.**~~ **Done in v1.4.**
+   `NamespaceAnonymousUnits` throws on an over-long namespace, but nothing checked each component of
+   *every* name actually produced. The sweep reads every `.sii` in the real output, checks every
+   component of every unit name and reference, and asserts it found names before asserting anything
+   about them — a first version silently matched zero because its pattern required a whole-line match
+   and unit declarations end in ` {`.
 
 8. **Normalise the dealer's badge geometry — MEASURED, and the cause is now known.** The
    in-game verification closed this question, so the guesswork this item carried is replaced with
@@ -926,47 +956,64 @@ in-game testing; items 5–7 came out of it.
    Both are centred on a canvas twice as wide as the artwork, so the game scales the whole canvas
    into its slot and the logo ends up at half the size it could be. That is the "small" Volvo.
 
-   The BMW additionally reads as **stretched** because its canvas is 4:1 while the roundel inside
-   is 2.59:1 — the game stretches the *canvas*, and the roundel is squashed horizontally into that
-   too. The fix is therefore to **crop to the opaque bounding box** (and re-pad to the reference
-   aspect), not to resample the artwork. Cropping is nearly lossless: it copies existing blocks
-   rather than re-encoding them, so the byte-for-byte colour guarantee survives, unlike item 9.
+   **Whether the BMW "reads as stretched" in game is still an open observation.** It was assumed that a
+   4:1 canvas holding a 2.59:1 roundel must be distorted, then assumed the opposite - that the mod
+   artist had pre-stretched the artwork to cancel the squash, so the canvas should be left alone. Both
+   were guesses. What is established is that the artwork is 2.59:1 **in the mod artist's own pixels**,
+   so whatever the game does with the canvas, a roundel cannot read as circular without resampling it.
+   The measurement below settles the canvas question; the artwork question needs the in-game observation.
 
-   To pick the target aspect, read the real geometry out of the base game's own materials. The
-   earlier instruction to read `ford.dds` / `dodge.dds` / `ram.dds` was **wrong and impossible**:
-   `base.scs` contains **zero `.dds` files** — every texture is packed inside its `.tobj` — so the
-   pixel dimensions cannot be read from a HashFS v2 archive at all.
+   **THE TARGET IS NOW MEASURED FROM THE BASE GAME, not inferred.** `base.scs`'s textures are
+   GDeflate-compressed with the DDS header stripped, so the C# reader refused every `.tobj` entry and it
+   was concluded - wrongly, and twice - that the stock pixels were unreadable. They are not: decoding
+   GDeflate and rebuilding the DDS header yields real textures, verified byte-for-byte against ~600
+   base-game files by the `easy-scsmodmanager` project. Read that way, `/material/ui/car_brand_logo/`
+   gives the ground truth:
 
-   **The slot is declared in the `.mat`, not the texture.** `material/ui/brand_logo/<brand>.mat`
-   carries `aux[0]`, which is the size the game draws the badge at:
+   | Badge | Canvas | Aspect | Artwork | Fill |
+   |---|---|---|---|---|
+   | Dodge | 175x89 | 1.97:1 | 175x25 | 100% |
+   | Ford | 175x89 | 1.97:1 | 175x53 | 100% |
+   | RAM | 175x89 | 1.97:1 | 175x41 | 100% |
 
-       effect : "ui.sdf.rfx" {
-           aux[0] : { 175.00000, 89.00000, 2.00000, 0.00000 }
-           texture : "texture" { source : "volvo.tobj" }
+   Every stock badge is **full-bleed**: the artwork spans the full canvas WIDTH, with vertical padding as
+   needed. The canvas is cut to the artwork, which is why there is no horizontal margin to remove - and
+   removing it is the entire fix.
 
-   Measured from `base.scs` (8.7 GB, HashFS v2, 147,084 entries):
+   **A logo taller than the slot aspect is a genuine exception.** Volvo's artwork is 64x48 = 1.33:1, so
+   no canvas at that width is 1.97:1 while holding 48 rows; padding it into the slot would mean cropping or
+   squashing the logo. The canvas therefore keeps the artwork's own aspect in that case. None of the three
+   stock badges are affected - they are all far wider than the slot - so this only arises on converted mods.
 
-   | Badge | Slot | Aspect |
-   |---|---|---|
-   | freightliner, intnational, kenworth, mack, peterbilt, volvo, westernstar, all | 175 x 89 | **1.97:1** |
-   | modded | 178 x 93 | 1.91:1 |
+   **Two earlier targets were wrong, and both looked plausible until measured.** Matching the artwork's
+   aspect ratio ignored size and produced a BMW badge filling 99% of its canvas. A "60.9% fill" target
+   then replaced it, measured from the **converted** `ford.dds` rather than a stock one - so it described
+   the bug rather than the correct state, and had to be scrapped too. A third attempt concluded that the
+   wide canvas was a deliberate compensation and preserved it exactly; that preserved the padding, and was
+   wrong for the same underlying reason: the target was never read from the game.
 
-   So the target is **1.97:1**, and it comes from the game's own metadata rather than from trusting
-   a measurement of pixels that cannot be read. Against that target:
+   **The lesson worth keeping: the symptom is identical for every one of these.** A logo that looks the
+   wrong size, or the wrong shape, looks the same whether the cause is aspect, fill or padding. Only
+   reading the game's own data settles it, and each of these three was confidently wrong until that was
+   done.
 
-   | Badge | Canvas | Canvas aspect | Verdict |
-   |---|---|---|---|
-   | Volvo | 128x64 | 2.00:1 | Already within 1.5% of the slot — it is **not** a reshape, only a padding trim |
-   | BMW | 256x64 | 4.00:1 | **Wrong by 2x.** This is the stretch, and the one that matters visually |
+   **The crop is lossless and provably so** - colour blocks are copied byte for byte, measured at max error
+   0 with 0 pixels lost on both real badges. Correcting artwork that is itself pre-squashed (the BMW
+   roundel is 2.59:1 in the mod author's pixels) needs **resampling**, which cannot be lossless: a BC1/BCn
+   block is self-contained, so a block can be relocated intact, but a resample puts pixels in different
+   blocks whose endpoints must be re-derived from the new pixel set. That is an opt-in pass, defaulted off.
+   The two passes are order-dependent: the crop reads the alpha channel to find the logo, so the transparency pass must run first; on a pristine mod the DDS has no alpha and every pixel reads as artwork. ModConverter runs transparency then crop, and the verification exercises that order on the untouched originals.
 
-   Both are the same operation — crop to opaque bounds, re-pad to 1.97:1 — but only BMW is a
-   genuine aspect correction.
+   **Dodge and RAM's slot geometry is still unmeasured** and remains an open gap. For the record, the
+   truck badges in `base.scs` do declare a slot via `effect : "ui.sdf.rfx" { aux[0] : {175,89,2,0} }`,
+   measured as 175x89 (**1.97:1**) for freightliner, international, kenworth, mack, peterbilt, volvo,
+   westernstar and all; `modded` is 178x93. **The third value is `2.00000` in all 91 of 91**
+   `ui.sdf.rfx` materials in `base.scs`, so it is a constant rather than a per-badge parameter.
 
-   **The third `aux[0]` value is `2.00000`, confirmed rather than assumed.** All nine dealer badges
-   use it, including `modded` which differs in the first two values; across **every** `ui.sdf.rfx`
-   material in `base.scs` it is **91 of 91**. It is therefore a constant, not a per-badge parameter,
-   and copying it verbatim is safe. Worth recording because "what does the 2 mean" could not be
-   determined from a truck badge alone — it is only safe because it never varies.
+   **None of that is evidence about the car shop.** Those `brand_logo/*.mat` files are *truck*
+   badges; the working *car* badges use plain `material : "ui"` with **no `aux[0]` at all**. Copying
+   `aux[0] : {175,89,2,0}` into a car-shop `.mat` would be incorrect, so it must not be done. It is
+   recorded only so the value is not mistaken later for a car-shop measurement.
 9. **Greyscale converted badges to match the stock treatment.** The base game's badges read as
    monochrome in the dealership; converted badges keep their brand colours (BMW blue-and-white,
    Volvo's blue), so they read as different objects. This is a separate change from item 8 and
@@ -1077,7 +1124,7 @@ when the window is dragged shorter, and the conversion itself runs normally.
 
 ---
 
-## v1.4.1
+## v1.5 — the save editor (was v1.4.1)
 
 **Originally scoped as a patch release — no longer is.** This section was written as "defects
 found after v1.4 ships, nothing structural". The save editor (item 6) changes that: it is a new
@@ -1085,12 +1132,12 @@ subsystem, in a new file format, on a new UI surface. Calling a release a *patch
 whole feature is exactly the kind of label drift that makes release notes untrustworthy, so the
 framing is corrected here rather than quietly ignored.
 
-Two honest options, and the choice is the maintainer's:
-
-- **Call it a feature release (v1.5).** Semantically correct, but it sits awkwardly next to a
-  v1.4 that has not shipped yet.
-- **Keep the number v1.4.1** and state plainly in the changelog that it is a feature release. Also
-  acceptable, but the patch number should not be used to disguise the scope.
+**This choice is now made: it is v1.5.** The two honest options were a feature release (v1.5) or
+keeping the patch number v1.4.1 while stating in the changelog that it was a feature. The first was
+taken, because v1.4.1 turned out to be needed by the patcher fixes and because "v1.4.1" would have
+disguised the scope anyway. The reasoning below is left as written, since it is what made the call
+easy — v1.4 had not shipped, and shipping a *feature* between two unverified patch releases would
+have been its own mess.
 
 What has not changed: **no settings schema break.** Schema versioning landed in v1.3.9 precisely so
 that a release adding features does not silently reinterpret user data. If the save editor needs to
@@ -1838,7 +1885,39 @@ in item 1 is now scoped to v1.4.3.
    branding and badges, both namespace fixes, `MainLayout.cs`, `ReleaseNotes.cs`,
    `SettingsSchema.cs`, `BrandLogoAlpha.cs`, both test projects, and a full README overhaul.
 
-## v1.4.3 — the patcher fix
+## v1.4.3 — the patcher fix → **renumbered to v1.4.1**
+
+**Renumbered a third time: v1.3.9.1 → v1.3.9.2 → v1.4.3 → v1.4.1.** The first two moves put the fix in
+the same numbered family as v1.4 instead of claiming to be a patch release following the v1.3.9 line.
+This one resolves a collision the earlier moves created.
+
+**Why the collision, and how it resolves.** `v1.4.1` was already assigned to the save editor, which is
+a *feature* and was itself flagged here as no longer deserving a patch number. The badge and texture
+work is what is actually ready to ship, so it takes **v1.4** and the patcher fixes become **v1.4.1**.
+The save editor moves to **v1.5**, which is what that section had already argued it was:
+
+| Work | Was | Now |
+| --- | --- | --- |
+| Badge crop, unsquash, greyscale, texture repair | v1.4 | **v1.4** |
+| Patcher fixes, `invalid_vehicle` | v1.4.3 | **v1.4.1** |
+| Save editor (a feature, not a patch) | v1.4.1 | **v1.5** |
+| Settings rewrite + theme engine | v1.4 | **v1.6** |
+
+The settings and theme work moved too. It was written as the v1.4 section, but that section was
+already describing the badge work, and mixing a settings-schema break into a release whose headline
+is a texture and badge fix would repeat exactly the label drift this file keeps catching. It is now
+v1.6, sequenced after the feature work rather than ahead of it.
+
+**Why the patcher fix is not *announced* in v1.4.** The code ships in v1.4, dormant behind the
+off-by-default setting, and this release is where it gets turned on. That ordering is deliberate:
+v1.4 could ship on badge and texture verification alone precisely because the patch work could not
+affect anyone who leaves the default alone, and a clean split of the code would have inverted the
+risk — v1.4.1 would then have been "new patch code that has never been loaded from a save" instead
+of "a default flip, verified".
+
+The cost is that git history and the changelog do not line up perfectly, which is recorded in the
+changelog rather than hidden. A surgical revert of 20 hunks across a 103KB file, immediately before
+a tag, was not worth tidying history.
 
 **Renumbered twice: v1.3.9.1 → v1.3.9.2 → v1.4.3.** The fix itself has moved once already —
 v1.3.9.1 was released for the option-row clipping fix and never touched patch mode. It was then
@@ -1857,8 +1936,8 @@ bottom of this file — in short:
    before trusting any redefinition approach.
 4. Re-enable patch mode as the default only once all of the above is confirmed in game.
 
-Deferred feature work is **not** duplicated here: it already has a home in the `## v1.4` and
-`## v1.4.1` sections above. A second list is how the version numbering got muddled in the first
+Deferred feature work is **not** duplicated here: it already has a home in the `## v1.6` and
+`## v1.5` sections above. A second list is how the version numbering got muddled in the first
 place.
 
 ## Research: why patch mode crashes but full conversion does not
